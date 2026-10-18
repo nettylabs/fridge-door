@@ -1,0 +1,18 @@
+{
+  "name": "fridge-door",
+  "version": "1.0.0",
+  "description": "The household organizer: a shared calendar, to-dos and chores with kids' stars, grocery lists sorted by aisle, recipes that go straight to the list, a weekly meal planner, notes, a simple household budget and a printable fridge sheet. For any household in any country. Runs locally; no account needed.",
+  "author": {
+    "name": "Netty Labs",
+    "url": "https://github.com/nettylabs"
+  },
+  "homepage": "https://github.com/nettylabs/fridge-door",
+  "repository": "https://github.com/nettylabs/fridge-door",
+  "license": "MIT",
+  "keywords": [
+    "fridge door",
+    "fridge-door",
+    "fridgedoor"
+  ],
+  "logo": "assets/logo.png"
+}

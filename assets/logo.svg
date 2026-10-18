@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Fridge Door">
+  <title>Fridge Door</title>
+  <defs>
+    <linearGradient id="plate" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4C6E98"/>
+      <stop offset="1" stop-color="#2A4161"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#plate)"/>
+  <!-- the fridge door, with the freezer line and handles -->
+  <rect x="124" y="60" width="264" height="392" rx="40" fill="#FFFFFF"/>
+  <rect x="124" y="170" width="264" height="10" fill="#D3DEEB"/>
+  <rect x="344" y="92" width="18" height="56" rx="9" fill="#A7BBD3"/>
+  <rect x="344" y="204" width="18" height="118" rx="9" fill="#A7BBD3"/>
+  <!-- a checklist held by a magnet -->
+  <g transform="rotate(-5 240 318)">
+    <rect x="162" y="222" width="156" height="186" rx="14" fill="#D9EDE7"/>
+    <path d="M184 268l11 11 21-23" fill="none" stroke="#2E9E8F" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="228" y="262" width="70" height="13" rx="6.5" fill="#A3C6BD"/>
+    <path d="M184 316l11 11 21-23" fill="none" stroke="#2E9E8F" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="228" y="310" width="58" height="13" rx="6.5" fill="#A3C6BD"/>
+    <rect x="186" y="352" width="24" height="24" rx="5" fill="none" stroke="#8FB3AA" stroke-width="6"/>
+    <rect x="228" y="358" width="64" height="13" rx="6.5" fill="#A3C6BD"/>
+  </g>
+  <circle cx="236" cy="226" r="22" fill="#EE6C4D"/>
+  <circle cx="229" cy="219" r="6" fill="#F7A891"/>
+</svg>

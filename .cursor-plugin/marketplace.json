@@ -1,0 +1,16 @@
+{
+  "name": "nettylabs",
+  "owner": {
+    "name": "Netty Labs"
+  },
+  "metadata": {
+    "description": "Netty Labs plugins for Grok Bot and Cursor"
+  },
+  "plugins": [
+    {
+      "name": "fridge-door",
+      "source": "./",
+      "description": "Family calendar, chores, grocery lists, recipes, meal plans, notes and a household budget, for any household in any country. Runs locally; no account needed."
+    }
+  ]
+}
