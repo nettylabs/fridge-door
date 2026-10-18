@@ -36,7 +36,7 @@ Fixes from an independent review of 1.0.0 and its re-check.
 - **Smaller fixes.** List delete and restore take the name either way; `household delete --dry-run`; no
   duplicate birthdays; "1,234.56" is read; every country's name works in setup; recipe imports drop the page's
   image link; the no-network test also catches dynamic code, other programs and indirect network imports.
-- 404 automated tests on Python 3.9, 3.11 and 3.13.
+- 405 automated tests on Python 3.9, 3.11 and 3.13.
 
 ## 1.0.0 (2026-10-17)
 

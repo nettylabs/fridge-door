@@ -50,7 +50,8 @@ _NOT_YET_18 = re.compile(r"\b(?:almost|nearly|turning|turns|soon|will be|'ll be)
                          r"|\b(?:18|eighteen)\s+(?:next|soon)\b")
 _MINOR_WORDS = re.compile(r"\b(?:teen\w*|tween\w*|preteen\w*|adolescent|minor|underage|under age|under 18|grades?|"
                           r"school|highschool|elementary|kindergarten|preschool|secondary|junior high|middle school)\b")
-_NUMBER = re.compile(r"(?<![\d.])\d{1,3}(?![\d.])")
+# A number of up to three digits, with any decimals ("16", "16.", "17.9"), not part of a longer one or a year.
+_NUMBER = re.compile(r"(?<!\d)(?<!\d\.)\d{1,3}(?:\.\d+)?(?!\.?\d)")
 _SMALL = ("", "", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve",
           "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen")
 _TENS = ("twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety")
@@ -137,7 +138,7 @@ def _age(word: str):
 
 def plain_yes(text: str, echo=(), ages: bool = False) -> bool:
     """Whether the whole answer is a plain yes: one of _YES first (perhaps after "please"), or a yes in another
-    language on its own, then only more of _THEN and the echo phrases (and, with ages, ages)."""
+    language on its own, then only more of _THEN and the echo phrases (and, with ages, adult ages: 18 to 120)."""
     words = tuple(_words(text) or ())
     if len(words) == 1 and words[0] in _ON_ITS_OWN:
         return True
@@ -147,7 +148,7 @@ def plain_yes(text: str, echo=(), ages: bool = False) -> bool:
     def rest_fits(i: int) -> bool:  # words[i:] is made only of allowed phrases (and ages)
         if i == len(words):
             return True
-        if ages and _age(words[i]) is not None and rest_fits(i + 1):
+        if ages and 18 <= (_age(words[i]) or 0) <= 120 and rest_fits(i + 1):
             return True
         return any(words[i:i + len(p)] == p and rest_fits(i + len(p)) for p in then)
 
@@ -158,9 +159,10 @@ def plain_yes(text: str, echo=(), ages: bool = False) -> bool:
 
 
 def _ages(text: str) -> list:
+    """Every age-like number anywhere in the answer, in digits (decimals too) or words."""
     folded = fold(text)
-    return [int(n) for n in _NUMBER.findall(folded)] + [a for a in map(_age, re.findall(r"[a-z]+(?:-[a-z]+)?",
-                                                                                         folded)) if a is not None]
+    return [float(n) for n in _NUMBER.findall(folded)] + [a for a in map(_age, re.findall(r"[a-z]+(?:-[a-z]+)?",
+                                                                                           folded)) if a is not None]
 
 
 def _says_under_18(text: str) -> bool:
@@ -174,8 +176,9 @@ def _says_under_18(text: str) -> bool:
 
 
 def adult_yes(name: str, text: str) -> bool:
-    """For "Is <name> 18 or older?": a plain yes, with at most one age, and that one 18 or over."""
-    ages = _ages(text)
+    """For "Is <name> 18 or older?": a plain yes, with at most one age, and that one 18 or over. It counts the ages
+    in the same words the yes check reads, so punctuation can't hide one ("yes, he's 16." is 16)."""
+    ages = [a for a in map(_age, _words(text) or ()) if a is not None]
     return len(ages) <= 1 and all(18 <= a <= 120 for a in ages) and plain_yes(text, _ADULT_WORDS + (name,), ages=True)
 
 

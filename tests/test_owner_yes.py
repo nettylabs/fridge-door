@@ -22,7 +22,9 @@ STRINGS_ATTACHED = ["yes, next week", "yes once we've exported", "yes once he mo
                     "yes, I want it done"]
 UNDER_18 = ["16", "yes, 16", "yes (16)", "sixteen", "maybe 16", "about 15", "nearly 18", "almost 18",
             "turning 18 next year", "grade 10", "in high school", "she's in grade 11", "teenager", "Sky is seventeen",
-            "yes, she'll be 18 next month", "16yo", "yes, she's a tween"]
+            "yes, she'll be 18 next month", "16yo", "yes, she's a tween",
+            # The final check: a full stop or a decimal hid the age in 1.0.1's re-check fixes.
+            "Yes, he's 16.", "yes she's 15.", "yes 17.", "yes, 12.", "yes, 16.5", "yes, 17.0", "yes, 17.9", "yes.16"]
 NOT_SAID = ["he's my son", "my daughter", "yes, he's my son"]  # a family word with no adult age
 # The re-check's teen answers that made a teen an adult in 1.0.1: now asked again (or refused as under 18 above).
 NOT_PLAIN = ["yes, she's 18 in May", "yes, she's 18 (well, in May)", "yes, born 2010", "yes, born in 2009",
@@ -45,7 +47,7 @@ class OwnerYesTest(HomeTest):
 
     def test_no_vague_or_negative_reply_changes_anything(self):
         code = self.err("needs_owner", "member", "remove", "Luis")["confirm"]
-        for reply in NOES + UNCLEAR + STRINGS_ATTACHED:
+        for reply in NOES + UNCLEAR + STRINGS_ATTACHED + [s + "." for s in STRINGS_ATTACHED if s[-1].isalnum()]:
             with self.subTest(reply=reply):
                 out = self.err("owner_declined" if reply in NOES else "unclear_answer", "member", "remove", "Luis",
                                "--owner-confirmed", reply, "--confirm", code)  # fmt: skip
@@ -155,6 +157,23 @@ class AdultCheckTest(HomeTest):
                 "yes, Lee is 34", "--confirm", code)  # fmt: skip
         self.assertEqual(self.linked(), ["M4"])
 
+    def test_punctuation_never_hides_an_age(self):
+        """Every refused answer stays refused with a full stop, "!" or "..." after it, and the yes check reads the
+        ages itself rather than trusting the under-18 check to have found them."""
+        from fridgedoor import confirm
+
+        code = self.err("needs_owner", "who", "link", "g1", "--participant", "@lee", "--member", "Lee")["confirm"]
+        for reply in UNDER_18 + NOT_PLAIN:
+            for end in ("", ".", "!", "...", " ."):
+                with self.subTest(reply=reply + end):
+                    self.assertFalse(confirm.adult_yes("Lee", reply + end))
+                    _, out = fridge(self.home, "who", "link", "g1", "--participant", "@lee", "--member", "Lee",
+                                    "--owner-confirmed", reply + end, "--confirm", code)  # fmt: skip
+                    self.assertIn(out.get("code"), ("minor_cannot_chat", "unclear_answer"), out)
+        for reply in ("Yes, she's 19.", "yes, Lee is 34!", "Yes.", "yes, eighteen."):
+            self.assertTrue(confirm.adult_yes("Lee", reply), reply)
+        self.assertEqual(self.linked(), [])
+
     def test_a_plain_yes_with_at_most_one_adult_age_counts(self):
         link = ("who", "link", "g1", "--participant", "@lee", "--member", "Lee")
         code = self.err("needs_owner", *link)["confirm"]
@@ -162,7 +181,8 @@ class AdultCheckTest(HomeTest):
                       "yes, they're 18 or older", "yes, he turned 18", "yes, over 18", "yes, an adult"):  # fmt: skip
             with self.subTest(reply=reply):
                 self.ok(*link, "--owner-confirmed", reply, "--confirm", code, "--dry-run")
-        for reply in ("yes, Luis is 34", "yes, she's 19 or 16", "yes, 150"):  # someone else, two ages, not an age
+        for reply in ("yes, Luis is 34", "yes, she's 19 or 16", "yes, she's 19, 20", "yes, 150"):  # someone else,
+            # two ages, not an age
             self.err("unclear_answer", *link, "--owner-confirmed", reply, "--confirm", code)
         self.assertEqual(self.linked(), [])
 
