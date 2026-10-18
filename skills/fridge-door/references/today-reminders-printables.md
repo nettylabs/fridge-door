@@ -21,7 +21,8 @@ new for them. Reply with its `text`, trimmed to what matters; skip empty section
 - `--peek` leaves any new notices it shows as unread.
 
 Offer it as a morning routine for each adult who wants it, in their own chat, at the time they
-choose.
+choose: `fridge --chat <their chat id> today`. A routine names its chat like any message; leave
+`--chat` out only on a platform without chat ids (otherwise it stops with `which_chat`).
 
 ## Notices
 
@@ -38,10 +39,12 @@ notice. Nothing is sent anywhere: they hear about it the next time they talk to 
 The toolkit works out reminders; your routine passes them on. It never sends anything itself.
 
 ```bash
-fridge remind due            # everyone's (owner, direct chat): run every 15 minutes
-fridge remind due --mine     # just the person talking
-fridge remind due --peek     # look without marking anything as sent
+fridge --chat <the owner's chat id> remind due    # everyone's (the owner's own chat): every 15 minutes
+fridge --chat <their chat id> remind due --mine   # just the person talking
+fridge --chat <the owner's chat id> remind due --peek   # look without marking anything as sent
 ```
+
+On a platform without chat ids, leave `--chat` out.
 
 The result has:
 - **`send`**: pass each one on now, to `to`, with its `text` word for word, in one of the chats its
@@ -73,8 +76,8 @@ hours, across a clock change; "days before" keep the time of day. Quiet hours co
 (`member edit Ana --quiet-hours "22:30-06:30"`) or the household default (9pm to 7am unless the
 owner changes it: `household settings --set quiet_hours="22:00-07:00"`).
 
-Without scheduled tasks on your platform, run `fridge remind due --mine` when someone starts a
-conversation and mention what's due.
+Without scheduled tasks on your platform, run `fridge remind due --mine` (with their `--chat`) when
+someone starts a conversation and mention what's due.
 
 ## Printables
 

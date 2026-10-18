@@ -78,11 +78,20 @@ def find_note(ctx, data: dict, query) -> dict:
 
 
 _HEALTH = re.compile(r"allerg|epi-?pen|asthma|inhaler|medic|diagnos|diabet|insulin|seizure|epilep|anaphyla|adhd|"
-                     r"autis|prescription|eczema|condition|therap")
+                     r"autis|prescription|eczema|condition|therap|dentist|orthodont|doctor|paediatr|pediatr|"
+                     r"counsel+or|psychiatr|psycholog|vaccin|immuni[sz]|pregnan|bed-?wet|wets the bed|\bgp\b")
 
 
-_SCHOOL = re.compile(r"\b(?:school|elementary|kindergarten|daycare|day care|preschool|nursery school|homeroom|"
-                     r"grade \d+|year \d+)\b")
+_SCHOOL = re.compile(r"\b(?:school\w*|elementary|kindergarten|daycare|day care|preschool|nursery school|homeroom|"
+                     r"grade \d+|year \d+|teacher|class|classroom|tutor|principal|report card|iep)\b")
+
+# Where a child can be found, and the numbers that identify them.
+_PERSONAL = re.compile(r"\b(?:address|lives at|social insurance|social security|ssn|sin number|passport|"
+                       r"health card|nhs number|medicare number)\b")
+
+# "The kids have peanut allergies" names the children without a name.
+_FAMILY_WORDS = re.compile(r"\b(?:the|our|my|both) (?:kids?|children|child|son|sons|daughters?|boys?|girls?|"
+                           r"baby|toddler|teens?|teenagers?)\b")
 
 
 def check_child_details(hh, note: dict) -> None:
@@ -91,15 +100,19 @@ def check_child_details(hh, note: dict) -> None:
     if note.get("sensitive") or note.get("visibility") == "private":
         return
     text = fold(" ".join([note["title"], note.get("body") or ""] + [c["text"] for c in note.get("checklist", [])]))
-    kids = [m["name"] for m in hh.members
-            if access.is_minor(m) and re.search(rf"\b{re.escape(fold(m['name']))}\b", text)]  # fmt: skip
-    what = "health" if _HEALTH.search(text) else "school" if _SCHOOL.search(text) else None
+    minors = [m for m in hh.members if access.is_minor(m)]
+    kids = [m["name"] for m in minors if re.search(rf"\b{re.escape(fold(m['name']))}\b", text)]
+    if minors and not kids and _FAMILY_WORDS.search(text):
+        kids = ["the kids"]
+    what = ("health" if _HEALTH.search(text) else "school" if _SCHOOL.search(text)
+            else "personal" if _PERSONAL.search(text) else None)  # fmt: skip
     if kids and what:
+        whose = "the kids'" if kids[0] == "the kids" else f"{kids[0]}'s"
         raise ToolError(
             f"This note names {kids[0]} next to {what} details, so it can't be a plain shared note: a child's details "
             "stay out of group chats and off the fridge sheet.",
-            hint="Save it with --sensitive (adults see it in their own chats) or --private (only you), or leave "
-            f"{kids[0]}'s details out.",
+            hint=f"Save it with --sensitive (adults see it in their own chats) or --private (only you), or leave "
+            f"{whose} details out.",
             code="child_details",
         )
 

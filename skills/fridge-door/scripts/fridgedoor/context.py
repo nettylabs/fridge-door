@@ -81,13 +81,14 @@ def resolve(hub: Hub, args) -> Ctx:
             code="chat_not_linked",
         )
     set_local_tz(household.tz())
-    if not chat_id and _speaker_chat_registered(hub, household):
-        # The owner registered their own chat (setup --chat): from then on every message says which chat it came
-        # from, and an unregistered chat is refused, so nobody else's chat can act as them (not even with --as).
+    if not chat_id and hub.direct_chats_in_use():
+        # A one-to-one chat is registered (setup --chat, who chat): the platform gives chats ids, so from then on
+        # every message, in every household here, says which chat it came from, and an unregistered chat is
+        # refused. No other chat can act as someone, not with --as and not after the speaker changes.
         raise ToolError(
-            f"Say which chat this came from: {household.name}'s direct chats are registered.",
-            hint="Pass --chat <chat-id> with every message. A chat that isn't registered is refused until the owner "
-            "registers it (who chat).",
+            "Say which chat this came from: one-to-one chats are registered here.",
+            hint="Pass --chat <chat-id> with every message and every scheduled routine. A chat that isn't registered "
+            "is refused until the owner registers it (who chat).",
             code="which_chat",
         )
 
@@ -175,18 +176,12 @@ def resolve(hub: Hub, args) -> Ctx:
 # --------------------------------------------------------------------------- commands
 
 
-def _speaker_chat_registered(hub: Hub, household: Household) -> bool:
-    speaker = hub.speaker(household.id)
-    return bool(speaker) and any(chat.get("type") == "direct" and chat.get("member") == speaker
-                                 for chat in household.meta().get("chats", {}).values())  # fmt: skip
-
-
 REGISTER_HINT = ("Ask the owner to register it once: fridge who chat <chat-id> --type group --minors yes|no for a "
                  "group chat, or --type direct --member <name> for one person's own chat.")
 def adult_confirmed(ctx: Ctx, member: dict, words, code, why: str | None = None) -> str | None:
-    """The owner's words confirming someone is an adult who may chat (already confirmed once: None): a clear yes to
-    "Is <name> 18 or older?" with that question's code. An answer that says or suggests they're under 18 is
-    refused (confirm.adult_check)."""
+    """The owner's words confirming someone is an adult who may chat (already confirmed once: None): a plain yes to
+    "Is <name> 18 or older?", perhaps with their age, and that question's code. An answer that says or suggests
+    they're under 18 is refused (confirm.owner_yes)."""
     if member["role"] == "owner" or member.get("chat_ok"):
         return None
     return confirm.owner_yes(
@@ -195,7 +190,7 @@ def adult_confirmed(ctx: Ctx, member: dict, words, code, why: str | None = None)
         "a parent.",
         words, code,
         why=why or f"Before {member['name']} can chat with the agent, the owner must confirm they're 18 or older.",
-        check=lambda text: confirm.adult_check(member["name"], text),
+        adult=member["name"],
     )
 
 
@@ -219,16 +214,20 @@ def cmd_chat(ctx: Ctx, args) -> dict:
             code="needs_owner",
             ask_owner="Is anyone under 18 in this group chat?",
         )
-    other = ctx.hub.chat_household(chat_id)
-    if other and other != ctx.household.id:
+    owner_of_chat, words = None, None
+    if args.type == "direct":
+        owner_of_chat = find_member(ctx.household, args.member)["id"] if args.member else ctx.member["id"]
+    # A chat belongs to one household. Only the owner's own one-to-one chat is also in the households they add
+    # (household add), and there it stays theirs.
+    here = ctx.household.meta().get("chats", {}).get(chat_id) or {}
+    elsewhere = [h for h in ctx.hub.chat_homes(chat_id) if h != ctx.household.id]
+    if elsewhere and not (owner_of_chat and here.get("type") == "direct" and here.get("member") == owner_of_chat):
         raise ToolError(
             f"The chat {chat_id!r} already belongs to another household.",
             hint="Remove it there first (who forget-chat), or use a different chat id.",
             code="chat_in_other_household",
         )
-    owner_of_chat, words = None, None
-    if args.type == "direct":
-        owner_of_chat = find_member(ctx.household, args.member)["id"] if args.member else ctx.member["id"]
+    if owner_of_chat:
         refuse_minor(ctx.household.member(owner_of_chat))
         words = adult_confirmed(ctx, ctx.household.member(owner_of_chat), args.owner_confirmed, args.confirm)
     hh = ctx.household
@@ -251,7 +250,7 @@ def cmd_chat(ctx: Ctx, args) -> dict:
         hh.log("chat.register", ctx.member["id"], chat=chat_id, type=args.type)
     if not args.dry_run:
         with ctx.hub.transaction() as data:
-            data.setdefault("chats", {})[chat_id] = hh.id
+            data.setdefault("chats", {}).setdefault(chat_id, hh.id)
     kind = "group chat" if args.type == "group" else "direct chat"
     extra = ""
     if record["minors_present"]:
@@ -354,13 +353,20 @@ def cmd_forget_chat(ctx: Ctx, args) -> dict:
         hh.touch("household")
         hh.log("chat.forget", ctx.member["id"], chat=args.chat_id)
     with ctx.hub.transaction() as data:
-        data.get("chats", {}).pop(args.chat_id, None)
+        ctx.hub.rehome_chat(data, args.chat_id, hh.id)
     shutil.rmtree(hh.chat_output(args.chat_id), ignore_errors=True)  # its printouts go with it
     return {"summary": f"Removed the chat {args.chat_id} and its printouts from {hh.name}."}
 
 
 def cmd_speaker(ctx: Ctx, args) -> dict:
     ctx.viewer.require_owner("choose who's talking in direct chats")
+    if ctx.chat_id:
+        raise ToolError(
+            "Each chat here already says who's talking, so there's no speaker to choose.",
+            hint="The speaker is only for a platform without chat ids, such as a terminal. Register each adult's own "
+            "chat instead: fridge who chat <chat-id> --type direct --member <name>",
+            code="uses_chats",
+        )
     member = find_member(ctx.household, args.member)
     refuse_minor(member)
     words = adult_confirmed(ctx, member, args.owner_confirmed, args.confirm)
@@ -397,7 +403,11 @@ def cmd_show(ctx: Ctx, args) -> dict:
     own = [f"{item['chat']} ({item['member']})" for item in items if item["type"] == "direct"]
     summary = f"{plural(len(items), 'chat')} linked to {hh.name}"
     summary += f"; one-to-one chats: {', '.join(own)}" if own else ""
-    summary += f"; any other direct chat speaks as {hh.member_name(speaker)}."
+    if ctx.hub.direct_chats_in_use():
+        summary += "; every message names its chat, and a chat nobody registered is refused."
+        speaker = None
+    else:
+        summary += f"; any other direct chat speaks as {hh.member_name(speaker)}."
     return {"you": ctx.describe(), "speaker": hh.member_name(speaker), "chats": items, "summary": summary}
 
 
@@ -440,8 +450,7 @@ def clear_member_from_hub(hub: Hub, household_id: str, member_id: str, deleted_c
     """Forget a member's deleted direct chats in hub.json, and stop treating them as the direct-chat speaker."""
     with hub.transaction() as data:
         for chat_id in deleted_chats:
-            if data.get("chats", {}).get(chat_id) == household_id:
-                del data["chats"][chat_id]
+            hub.rehome_chat(data, chat_id, household_id)
         if data.get("speakers", {}).get(household_id) == member_id:
             data["speakers"][household_id] = None
 
@@ -463,7 +472,7 @@ def register(cli) -> None:
             "fridge who chat family-group --type group --minors yes",
             "fridge who chat jo-dm --type direct --member Jo",
             'fridge who chat jo-dm --type direct --member Jo --owner-confirmed "yes, Jo is 34" '
-            "--confirm 1c5e2a0-3f9b27d41c",
+            "--confirm 1c5e2a0-8d41f2-3f9b27d41c",
         ],
         cmd_chat,
     )
@@ -482,7 +491,7 @@ def register(cli) -> None:
         [
             "fridge who link family-group --participant @sam --member Sam",
             'fridge who link family-group --participant @sam --member Sam --owner-confirmed "yes, Sam is 42" '
-            "--confirm 1c5e2a0-3f9b27d41c",
+            "--confirm 1c5e2a0-8d41f2-3f9b27d41c",
             "fridge who link family-group --participant @arjun --member Arjun",
         ],
         cmd_link,

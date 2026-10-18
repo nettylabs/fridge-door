@@ -242,26 +242,28 @@ class RemindersOptInTest(HomeTest):
 
     def setUp(self):
         super().setUp()
-        self.setup_family("Ana, Luis", "GB")
-        self.confirmed("who", "chat", "luis-dm", "--type", "direct", "--member", "Luis")
-        self.ok("cal", "add", "Movie", "--date", "today", "--time", "20:00", "--remind", "1h", "--for", "Ana, Luis")
+        self.setup_family("Ana, Luis", "GB", "Test home", "--chat", "ana-dm")
+        self.confirmed("who", "chat", "luis-dm", "--type", "direct", "--member", "Luis", "--chat", "ana-dm")
+        self.ok("cal", "add", "Movie", "--date", "today", "--time", "20:00", "--remind", "1h", "--for", "Ana, Luis",
+                "--chat", "ana-dm")  # fmt: skip
 
     def due(self):
-        return self.ok("remind", "due", env={"FRIDGE_NOW": "2026-10-19T19:05:00"})
+        return self.ok("remind", "due", "--chat", "ana-dm", env={"FRIDGE_NOW": "2026-10-19T19:05:00"})
 
     def test_nobody_gets_reminders_they_didnt_ask_for(self):
         out = self.due()
         self.assertEqual(out["send"], [])
         self.assertIn("Nobody has turned reminders on", out["summary"])
-        self.err("not_their_own", "member", "edit", "Luis", "--reminders", "on")  # not even the owner, for him
-        self.ok("member", "edit", "Luis", "--reminders", "on", "--chat", "luis-dm")
+        self.err("not_their_own", "member", "edit", "Luis", "--reminders", "on", "--chat", "ana-dm")  # not even the
+        self.ok("member", "edit", "Luis", "--reminders", "on", "--chat", "luis-dm")  # owner, for him
         self.assertEqual([r["to"] for r in self.due()["send"]], ["Luis"])  # Ana hasn't said yes
 
     def test_the_owner_can_turn_someones_off_and_a_reminder_request_says_when_theyre_off(self):
         self.ok("member", "edit", "Luis", "--reminders", "on", "--chat", "luis-dm")
-        self.ok("member", "edit", "Luis", "--reminders", "off")
-        self.assertFalse(self.ok("member", "show", "Luis")["member"]["reminders"])
-        out = self.ok("cal", "add", "Dentist", "--date", "friday", "--time", "15:00", "--remind", "1h")
+        self.ok("member", "edit", "Luis", "--reminders", "off", "--chat", "ana-dm")
+        self.assertFalse(self.ok("member", "show", "Luis", "--chat", "ana-dm")["member"]["reminders"])
+        out = self.ok("cal", "add", "Dentist", "--date", "friday", "--time", "15:00", "--remind", "1h",
+                      "--chat", "ana-dm")  # fmt: skip
         self.assertIn("Reminders are off for you", out["hint"])
 
 
@@ -315,7 +317,7 @@ class NiceToHaveTest(HomeTest):
     def test_any_countrys_name_works(self):
         out = self.err("needs_currency", "setup", "--members", "Ana", "--country", "Kuwait", "--home",
                        str(self.home / "kw"))  # fmt: skip
-        self.assertIn("KW", out["error"])
+        self.assertIn("Kuwait", out["error"])
 
     def test_household_delete_previews_without_the_owners_yes(self):
         out = self.ok("household", "delete", "--dry-run")

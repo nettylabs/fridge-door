@@ -26,7 +26,7 @@ import zipfile
 from pathlib import Path
 
 from .util import (WEEKDAYS, ToolError, day_text, file_lock, fold, now, now_stamp, parse_date, parse_stamp,
-                   read_json, today, write_json)
+                   read_json, today, utc_now, write_json)
 
 SCHEMA = 1
 
@@ -130,7 +130,30 @@ class Hub:
         return (self.data or {}).get("speakers", {}).get(household_id)
 
     def chat_household(self, chat_id: str) -> str | None:
+        """The household a chat's messages go to. A one-to-one chat can be registered in several (the owner's own
+        chat follows them into households they add): this is the one it's in now (household switch)."""
         return (self.data or {}).get("chats", {}).get(chat_id)
+
+    def chat_homes(self, chat_id: str) -> list:
+        """The ids of every household this chat is registered in."""
+        return [e["id"] for e in self.households() if chat_id in Household(self, e).meta().get("chats", {})]
+
+    def direct_chats_in_use(self) -> bool:
+        """Whether any household here has a registered one-to-one chat. Then the platform gives chats ids, so every
+        command must say which chat it came from (context.resolve), in every household."""
+        return any(chat.get("type") == "direct" for e in self.households()
+                   for chat in Household(self, e).meta().get("chats", {}).values())  # fmt: skip
+
+    def rehome_chat(self, data: dict, chat_id: str, gone: str) -> None:
+        """After a chat leaves household `gone` (forgotten there, its person removed, or the household deleted):
+        if its messages went there, send them to another household it's still registered in, else forget it."""
+        if data.get("chats", {}).get(chat_id) != gone:
+            return
+        others = [h for h in self.chat_homes(chat_id) if h != gone]
+        if others:
+            data["chats"][chat_id] = others[0]
+        else:
+            del data["chats"][chat_id]
 
 
 class Household:
@@ -149,6 +172,7 @@ class Household:
         self._log: list = []
         self._in_tx = False
         self.dropped_chats: list = []  # direct chats deleted during this command, for hub.json clean-up
+        self.used_codes: list = []  # the owner's confirmation codes this command used (confirm.owner_yes)
 
     # ------------------------------------------------------------------ reading
 
@@ -245,6 +269,7 @@ class Household:
             try:
                 yield self
                 if not dry_run:
+                    self._use_codes()
                     for name in sorted(self._dirty):
                         filename = "household.json" if name == "household" else f"{name}.json"
                         if name != "household" and self._cache[name].get("bin"):
@@ -258,10 +283,25 @@ class Household:
                 if dry_run:
                     self._cache.clear()  # forget the unsaved changes
 
+    def _use_codes(self) -> None:
+        """Remember the confirmation codes this command used, until they expire, so each works once."""
+        if not self.used_codes:
+            return
+        from .confirm import ASK_HINT, used_codes_kept
+
+        used = used_codes_kept(self.meta().get("used_codes", {}))
+        if any(code in used for code in self.used_codes):  # another command used it a moment ago
+            raise ToolError("That confirmation code was already used, so nothing was changed.", hint=ASK_HINT,
+                            code="needs_owner")  # fmt: skip
+        used.update({code: now_stamp() for code in self.used_codes})
+        self.meta()["used_codes"] = used
+        self._dirty.add("household")
+        self.used_codes = []
+
     def _empty_bin(self, data: dict) -> None:
-        """Deleted things older than the retention period leave the bin (bin.py) for good."""
+        """Deleted things older than the retention period leave the bin (trash.py) for good."""
         days = int(self.settings.get("retention_days") or DEFAULT_RETENTION_DAYS)
-        cutoff = now("UTC") - _dt.timedelta(days=days)
+        cutoff = utc_now() - _dt.timedelta(days=days)
         data["bin"] = [e for e in data["bin"] if (parse_stamp(e.get("deleted_at")) or cutoff) >= cutoff]
 
     def touch(self, name: str = "household") -> None:
@@ -306,7 +346,7 @@ class Household:
         if not path.is_file():
             return 0
         days = int(self.settings.get("retention_days") or DEFAULT_RETENTION_DAYS)
-        cutoff = now("UTC") - _dt.timedelta(days=days)
+        cutoff = utc_now() - _dt.timedelta(days=days)
         with open(path, encoding="utf-8") as fh:
             first = fh.readline()
         try:

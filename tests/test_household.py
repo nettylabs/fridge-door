@@ -166,8 +166,8 @@ class HouseholdTest(HomeTest):
     def test_reminders_outside_the_chat_need_the_owners_words(self):
         out = self.err("needs_owner", "household", "settings", "--set", "reminders_outside_chat=yes")
         self.assertIn("outside this chat", out["ask_owner"])
-        out = self.confirmed("household", "settings", "--set", "reminders_outside_chat=yes", words="yes, email")
-        self.assertEqual(out["settings"]["reminders_outside_chat"]["owner_said"], "yes, email")
+        out = self.confirmed("household", "settings", "--set", "reminders_outside_chat=yes", words="yes, allow it")
+        self.assertEqual(out["settings"]["reminders_outside_chat"]["owner_said"], "yes, allow it")
 
     def test_delete_needs_the_owners_words(self):
         out = self.err("needs_owner", "household", "delete")

@@ -388,7 +388,7 @@ def new_task(hh, lst: dict, title: str, created_by: str | None, parent=None, not
 
 def cmd_lists(ctx, args) -> dict:
     hh = ctx.household
-    data = hh.data("todos")
+    data = kid_level(ctx, hh.data("todos"))  # with kids in the chat, only chores count
     views = []
     for lst in visible_lists(ctx, data):
         open_count = sum(1 for t in data["tasks"] if t["list"] == lst["id"] and not t.get("parent") and not is_done(t))

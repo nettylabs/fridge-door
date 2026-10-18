@@ -18,9 +18,12 @@ these in one message:
    an age in brackets, which only picks the role and isn't stored.
 2. **The country** (a code like CA or a name like Canada). It sets the currency, time zone, week
    start, date and time format, units and paper size. For a country with several time zones
-   (Australia, Brazil, Canada, Chile, Spain, Indonesia, Mexico, Portugal, the US), also ask which
-   province, state or city, and pass its zone with `--timezone`. Without it, setup answers
-   `needs_timezone` and lists the main zones (`zones`): ask, then run it again.
+   (Australia, Brazil, Canada, Chile, Spain, Indonesia, Mexico, Portugal, the US, Russia and
+   others), also ask which province, state or city, and pass its zone with `--timezone`. Without
+   it, setup answers `needs_timezone` and lists the zones (`zones`): ask, then run it again. For a
+   country it has no defaults for, `needs_currency` asks for the currency (and the zone, unless the
+   country has only one) in one go. It never quietly runs a household on UTC; `doctor` flags one
+   that does.
 3. **A name for the household** (optional; the default is "<owner>'s home").
 
 Pass `--chat <this chat's id>` whenever your platform gives chats an id: it registers this
@@ -63,8 +66,15 @@ more):
 | `currency_display` | `auto` (the code when a symbol like $ is shared), `always` or `never` |
 | `quiet_hours` | the household default, e.g. `22:00-07:00` |
 | `retention_days` | how long finished chores, deleted lists and the activity log are kept (default 90) |
-| `sensitive_notes_in_groups` | `yes` needs the owner's clear yes (`ask_owner`, then `--owner-confirmed` and `--confirm`), one setting at a time |
-| `reminders_outside_chat` | `yes` needs the owner's clear yes, the same way |
+| `sensitive_notes_in_groups` | `yes` needs the owner's plain yes (`ask_owner`, then `--owner-confirmed` and `--confirm`), one setting at a time |
+| `reminders_outside_chat` | `yes` needs the owner's plain yes, the same way |
+
+**The owner's yes.** Only a plain yes as the whole answer counts: "yes", "yep", "yeah", "confirm",
+"go ahead" or "do it", perhaps with "please" and the question's own words ("yes, remove Luis",
+"yes, delete it"). Anything else is refused, so ask again: "ok", "sure", an emoji, a question, a
+condition or delay ("yes, once we've exported", "yes, next week"), a joke ("yes lol jk") or a yes
+naming someone else. Any no is refused as a no. Each `confirm` code works once, for a day, for that
+one question.
 
 ## Members, roles and access
 
@@ -86,8 +96,10 @@ fridge member access Mateo --role adult         # a new role resets access; maki
 fridge member access Luis --reset
 ```
 
-- `member add --name ... --role ...` (owner) adds someone. Colours come from a palette unless
-  `--color` picks one.
+- `member add --name ... --role ...` (owner) adds someone. An age or tag in brackets works as in
+  setup (`--name "Max (15)"` adds a teen called Max; the age isn't stored), and names can't hold
+  numbers. Colours come from a palette unless `--color` picks one. Kids and teens never get the
+  budget, whatever their access says.
 - `member edit` changes a name, colour, quiet hours (`"22:30-06:30"`, `none` or `default`), the
   Today sections (`events,tasks,dinner,lists,birthdays,bills,notices` or `all`) or reminders
   (`--reminders on|off`). Members may edit themselves; the owner may edit anyone, except that only
@@ -119,10 +131,12 @@ Fridge Door is made for the adults of a household. Kids and teens take part thro
 ## Chats: who's talking and who's watching
 
 **The owner's own one-to-one chat** is registered at setup (`setup --chat <chat-id>`) or later
-(`fridge who chat <chat-id> --type direct`). From then on every message must say which chat it came
-from, and a chat nobody registered is refused (`which_chat`, `chat_not_linked`), so no other chat
-can act as the owner. Only on a platform without chat ids (a terminal) do commands run without
-`--chat`, as the household's direct-chat speaker (`fridge who speaker <name>` changes who that is).
+(`fridge who chat <chat-id> --type direct`). Once any one-to-one chat is registered, every command
+in every household of the data folder must say which chat it came from, scheduled routines
+included, and a chat nobody registered is refused (`which_chat`, `chat_not_linked`), so no other
+chat can act as anyone. Only on a platform without chat ids (a terminal) do commands run without
+`--chat`, as the household's direct-chat speaker (`fridge who speaker <name>` changes who that is;
+with chat ids it's refused, `uses_chats`, because each chat already says who's talking).
 Everything else is registered once by the owner.
 
 **A group chat** (a family or flat chat the agent is part of):
@@ -131,11 +145,12 @@ Everything else is registered once by the owner.
    calls that conversation; use the same one every time. If you don't know whether anyone under 18
    is in it, the toolkit asks the owner (`ask_owner`).
 2. Link each adult once: `fridge who link <chat-id> --participant <their handle> --member <name>`.
-   The first link of each person asks the owner "Is <name> 18 or older?". Only if they clearly say
-   yes, run it again with their exact words in `--owner-confirmed` and the `confirm` code in
-   `--confirm`. An answer that says or suggests they're under 18 (an age, "teen", a school grade,
-   "almost 18") is refused, and so is anything short of a clear yes. A kid's or teen's handle is
-   noted instead of linked (above).
+   The first link of each person asks the owner "Is <name> 18 or older?". Only if they say yes,
+   run it again with their exact words in `--owner-confirmed` and the `confirm` code in
+   `--confirm`. Only a plain yes counts, perhaps with one age of 18 or over ("yes", "yes, Sam is
+   42"). An answer that says or suggests they're under 18 (an age, "teen", a school grade, "almost
+   18") is refused, and anything else (a birth year, "18 in May", "a junior") is asked again. A
+   kid's or teen's handle is noted instead of linked (above).
 3. From then on, every command from that chat carries `--chat <chat-id> --from <handle>`.
    `--as` is refused in group chats, so nobody can act as someone else.
 
@@ -161,12 +176,19 @@ says who a message runs as and who will see the reply. Use it whenever you're un
 ## More than one household
 
 Someone can belong to several households (their own home and a parent's, for example). Only the
-owner adds one, listing themselves as its owner, so their direct chat stays theirs:
+owner adds one, listing themselves as its owner:
 `fridge household add --name "Grandma's" --members "Ana (owner), Grandma Rosa" --country PT
---timezone Europe/Lisbon` adds one and makes it active. `household list` (direct chat) shows them;
-`household switch <name>` (the owner) moves between them, but only to a household where direct
-chats are them too; `--household <name>` runs one command in another household. A registered chat
-always belongs to one household.
+--timezone Europe/Lisbon` adds one and makes it active. Run from the owner's own chat, it registers
+that chat in the new household as theirs too, and the chat's messages go there from then on.
+
+- `household list` (direct chat) shows the households the person asking is in, and who they are in
+  each: by their chat where chats have ids, else by their name.
+- `household switch <name>` moves this chat to another household it's registered in (anyone, for
+  their own chat). Without chat ids, the owner switches the household everything runs in, but only
+  to one where direct chats are them too.
+- `--household <name>` runs one command in another household without switching (with chat ids, the
+  chat must be registered there).
+- A group chat, and another adult's chat, belongs to one household.
 
 ## Removing, exporting and deleting
 

@@ -67,15 +67,16 @@ Fridge Door is made for the adults of a household. Kids and teens take part thro
 
 - **Kids don't chat with the AI.** The AI apps don't allow it (Claude and Cursor are for adults; Grok needs
   users to be 13 or older, with a parent's permission until 18), and it isn't needed. Only adults can be linked
-  to a chat, and the owner confirms each one is 18 or older with a clear yes. An answer that mentions an age
-  under 18, a school grade or "almost 18" is refused, and making a teen an adult member asks the same question.
+  to a chat, and the owner confirms each one is 18 or older with a plain yes (perhaps with their age). An answer
+  that mentions an age under 18, a school grade or "almost 18" is refused, anything else ("18 in May", a birth
+  year) is asked again, and making a teen an adult member asks the same question.
   If a teen is in your family group chat, you can tell Fridge Door so: it won't act on their messages, and that
   chat only shows kid-level things.
 - **A child is a first name or nickname, a colour, their chores and a star count,** with no place for a
   surname, age, photo, school, location or health details (plus, for a teen in a family group chat, their
-  handle there, so they're recognised). A note about a child's health or school can only be sensitive or
-  private, so it never shows in a group chat or on the fridge sheet. A child's birthday can go on the calendar
-  as a day and month.
+  handle there, so they're recognised). A note about a child's health, school, address or ID numbers can only
+  be sensitive or private, so it never shows in a group chat or on the fridge sheet. A child's birthday can go
+  on the calendar as a day and month.
 - **Kids join in on paper.** The weekly fridge sheet shows their chores with tick boxes and their stars. You tick
   chores off in chat ("Mia did the dishes") and Mia gets a star. There are no streaks, badges, characters or
   messages to kids.
@@ -84,8 +85,9 @@ Fridge Door is made for the adults of a household. Kids and teens take part thro
   erases their details; deleting the household erases everything. Deleted things wait in a bin for 90 days in
   case you change your mind, then go for good, and finished chores and the activity log clear themselves after
   90 days too (you can change that).
-- **Netty Labs receives no data.** The plugin has no networking code at all (a test fails if any is added), and
-  no accounts, analytics, ads or telemetry.
+- **Netty Labs receives no data.** The plugin has no networking code at all (a test checks every file for
+  networking modules, code loaded on the fly and other programs being started), and no accounts, analytics, ads
+  or telemetry.
 - **Where your data is:** in files on the computer your AI agent runs on, and in your chats with it. If you use
   a hosted agent such as Grok Bot, those files and chats are on that service's servers, under its privacy
   policy and age rules; use its settings to delete them. Photos and receipt pictures stay wherever they were
@@ -96,8 +98,9 @@ Fridge Door is made for the adults of a household. Kids and teens take part thro
 ## Safe by design
 
 - **Your OK first.** Nothing is sent outside your chat, paid or deleted without your say-so, and the owner
-  decides who's in the household and who sees what. Only a clear yes to that exact question counts: "ok",
-  "sure", an emoji or "yes, but later" doesn't. Reminders only go to adults who turned them on themselves.
+  decides who's in the household and who sees what. Only a plain yes to that exact question counts, once: "ok",
+  "sure", an emoji, "yes, next week" or "yes lol jk" doesn't. Reminders only go to adults who turned them on
+  themselves.
 - **Everyone sees only their share.** Access is set per person and per module (calendar, lists, recipes,
   budget...), private things stay private (the owner's export leaves them out too), and a group chat shows only
   what everyone in it may see. Bill reminders and private reminders only go to the person's own chat.

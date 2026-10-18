@@ -31,7 +31,7 @@ class NotesTest(HomeTest):
         self.assertIn("1 sensitive note not shown", out["summary"])
         self.err("hidden_in_group", "note", "show", "Wifi", *group)  # says why, so nobody makes a second Wifi note
         self.err("exists", "note", "add", "Wifi", "--body", "again", *group)
-        self.confirmed("household", "settings", "--set", "sensitive_notes_in_groups=yes", words="yes, fine")
+        self.confirmed("household", "settings", "--set", "sensitive_notes_in_groups=yes", words="yes, show them")
         self.assertIn("Wifi", [n["title"] for n in self.ok("note", "list", *group)["notes"]])
 
     def test_a_group_never_learns_what_someones_private_notes_are_called(self):

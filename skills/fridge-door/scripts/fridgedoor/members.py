@@ -70,7 +70,14 @@ def check_name(members: list, name, role: str, exclude_id: str | None = None) ->
     """Clean a member name; unique in the household; first name or nickname only for kids and teens."""
     limit = MINOR_NAME_MAX if role in access.MINOR_ROLES else NAME_MAX
     text = clean_text(name, "name", max_len=limit)
-    if role in access.MINOR_ROLES and (len(text.split()) > 1 or re.search(r"[\d@/]", text)):
+    if re.search(r"[\d()\[\]]", text) and role not in access.MINOR_ROLES:
+        raise ToolError(
+            f"A name can't hold an age or other numbers (got {text!r}).",
+            hint='Give an age in brackets when adding someone, like --name "Max (15)": it only picks the role '
+            "(under 13 kid, 13-17 teen) and isn't stored.",
+            code="bad_name",
+        )
+    if role in access.MINOR_ROLES and (len(text.split()) > 1 or re.search(r"[\d@/()\[\]]", text)):
         raise ToolError(
             f"For kids and teens, use one name: a first name or nickname (got {text!r}).",
             hint="No surnames, ages or other details: Fridge Door keeps only a first name or nickname for kids. "
@@ -155,6 +162,9 @@ def apply_access_changes(member: dict, changes: list) -> dict:
         if lvl not in access.LEVELS:
             raise ToolError(f"{lvl!r} isn't an access level.", hint="Levels: none, view, edit.", code="bad_permissions")
         levels[access.module_name(module)] = lvl
+    if member["role"] in access.MINOR_ROLES and levels.get("budget") != "none":
+        raise ToolError(f"{member['name']} is a {member['role']}: kids and teens never see the budget.",
+                        hint="Leave budget at none for them.", code="minor_details")  # fmt: skip
     member["access"] = access.validate_access(levels)
     return member["access"]
 
@@ -218,39 +228,39 @@ def public(member: dict, settings: dict | None = None, viewer=None, detail: bool
     return out
 
 
+def parse_person(text: str) -> tuple:
+    """Read "Mateo (15)" or "Sofia (kid)" into (name, role), or (name, None) with no tag. An age in brackets only
+    picks the role (under 13 kid, 13-17 teen, 18+ adult) and is never stored."""
+    match = re.fullmatch(r"(.+?)\s*[(\[]\s*([^)\]]+?)\s*[)\]]", str(text or "").strip())
+    if not match:
+        return str(text or "").strip(), None
+    name, tag = match.group(1).strip(), match.group(2)
+    key = fold(tag)
+    if key in access.ROLES:
+        return name, key
+    if key in ("child", "kids", "son", "daughter", "baby", "toddler"):
+        return name, "kid"
+    if key in ("teenager", "teens"):
+        return name, "teen"
+    if key in ("me", "parent", "mum", "mom", "dad", "partner", "roommate", "flatmate", "grandparent"):
+        return name, "adult"
+    if re.fullmatch(r"\d{1,3}", key):
+        age = int(key)
+        return name, "kid" if age < 13 else "teen" if age < 18 else "adult"
+    raise ToolError(
+        f"I can't tell what {tag!r} means for {name}.",
+        hint="Mark people as (owner), (adult), (teen) or (kid), or give an age like (9), which isn't stored.",
+        code="bad_role",
+    )
+
+
 def parse_member_list(text: str) -> list:
-    """Read "Ana, Luis, Sofia (kid), Mateo (15)" into [(name, role)]. An age in brackets only picks the role
-    (under 13 kid, 13-17 teen, 18+ adult) and is never stored. The first person is the owner unless someone
-    is marked "(owner)"."""
+    """Read "Ana, Luis, Sofia (kid), Mateo (15)" into [(name, role)] (see parse_person). The first person is the
+    owner unless someone is marked "(owner)"."""
     parts = [p.strip() for p in re.split(r"[,;\n]|\band\b|&", str(text or "")) if p.strip()]
     if not parts:
         raise ToolError("Who's in the household?", hint='e.g. --members "Ana, Luis, Sofia (kid)"', code="missing")
-    people = []
-    for part in parts:
-        match = re.fullmatch(r"(.+?)\s*[(\[]\s*([^)\]]+?)\s*[)\]]", part)
-        name, tag = (match.group(1), match.group(2)) if match else (part, None)
-        role = None
-        if tag:
-            key = fold(tag)
-            if key in access.ROLES:
-                role = key
-            elif key in ("child", "kids", "son", "daughter", "baby", "toddler"):
-                role = "kid"
-            elif key in ("teenager", "teens"):
-                role = "teen"
-            elif key in ("me", "parent", "mum", "mom", "dad", "partner", "roommate", "flatmate", "grandparent"):
-                role = "adult"
-            elif re.fullmatch(r"\d{1,3}", key):
-                age = int(key)
-                role = "kid" if age < 13 else "teen" if age < 18 else "adult"
-            else:
-                raise ToolError(
-                    f"I can't tell what {tag!r} means for {name}.",
-                    hint="Mark people as (owner), (adult), (teen) or (kid), or give an age like (9), which isn't "
-                    "stored.",
-                    code="bad_role",
-                )
-        people.append([name.strip(), role])
+    people = [list(parse_person(part)) for part in parts]
     if not any(role == "owner" for _, role in people):
         if people[0][1] in access.MINOR_ROLES:
             raise ToolError(
@@ -299,8 +309,12 @@ def cmd_add(ctx, args) -> dict:
     from . import todos
 
     hh = ctx.household
+    name, tagged = parse_person(args.name)  # "Max (15)" is a teen called Max, as in setup
+    if tagged and args.role and tagged != args.role:
+        raise ToolError(f"{args.name!r} says {tagged}, but --role says {args.role}.",
+                        hint="Give one: an age or tag in brackets, or --role.", code="bad_role")  # fmt: skip
     with hh.transaction(dry_run=args.dry_run):
-        member = new_member(hh.members, hh.next_id("member"), args.name, args.role, args.color)
+        member = new_member(hh.members, hh.next_id("member"), name, tagged or args.role or "adult", args.color)
         hh.members.append(member)
         if args.quiet_hours and member["role"] in access.ADULT_ROLES:
             set_quiet_hours(member, args.quiet_hours)
@@ -435,6 +449,7 @@ def cmd_remove(ctx, args) -> dict:
         f"Remove {target['name']} from {hh.name} and erase their details?", args.owner_confirmed, args.confirm,
         why=f"Removing {target['name']} erases their profile and personal list, unassigns their tasks and takes their "
         "name off every record. It can't be undone.",
+        echo=("remove", "delete", "them", target["name"]),
     )
     with hh.transaction(dry_run=args.dry_run):
         changes = forget(hh, target["id"])
@@ -498,8 +513,9 @@ def register(cli) -> None:
         ],
         cmd_add,
     )
-    p.add_argument("--name", required=True)
-    p.add_argument("--role", default="adult", choices=access.ROLES)
+    p.add_argument("--name", required=True, help='First name, or a nickname; "Max (15)" makes a teen (the age '
+                   "isn't stored)")
+    p.add_argument("--role", choices=access.ROLES, help="owner, adult, teen or kid (default: adult)")
     p.add_argument("--color", help="A palette colour name or #RRGGBB (default: the next unused one)")
     p.add_argument("--quiet-hours", help='Adults: e.g. "22:00-07:00", or none')
     p.add_argument("--dry-run", action="store_true")
@@ -528,7 +544,8 @@ def register(cli) -> None:
             "fridge member access Mateo --role teen",
             "fridge member access Sofia --set grocery=edit --set calendar=view",
             "fridge member access Luis --reset",
-            'fridge member access Zoe --role adult --owner-confirmed "yes, Zoe is 19" --confirm 1c5e2a0-3f9b27d41c',
+            'fridge member access Zoe --role adult --owner-confirmed "yes, Zoe is 19" '
+            "--confirm 1c5e2a0-8d41f2-3f9b27d41c",
         ],
         cmd_access,
     )
@@ -552,7 +569,8 @@ def register(cli) -> None:
         "remove",
         "Remove a member and erase their details (owner, needs the owner's own words).",
         ['fridge member remove "Uncle Leo"',
-         'fridge member remove "Uncle Leo" --owner-confirmed "yes, remove Leo" --confirm 1c5e2a0-3f9b27d41c'],
+         'fridge member remove "Uncle Leo" --owner-confirmed "yes, remove Uncle Leo" '
+         "--confirm 1c5e2a0-8d41f2-3f9b27d41c"],
         cmd_remove,
     )
     p.add_argument("member")

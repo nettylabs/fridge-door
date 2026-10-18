@@ -2,7 +2,7 @@
 
 Generated from `fridge <command> --help`. Run that for the same text at any time.
 
-Who is talking goes with every command: `--chat <chat-id> --from <participant>` in a registered group chat, `--chat <chat-id>` in an adult's own registered one-to-one chat, and neither for the household's direct-chat speaker. `--as <adult member>` is only for when the platform itself says who is writing, and is refused in group chats and in someone's own chat. `--home <folder>` picks the data folder and `--household <name>` the household. These work before or after the command, so they are left out of the sections below. Every command prints JSON; errors print `{"ok": false, "error", "hint", "code"}` and exit with code 1 (2 for a mistyped command); an `ask_owner` field is a question only the household owner may answer.
+Who is talking goes with every command: `--chat <chat-id> --from <participant>` in a registered group chat, `--chat <chat-id>` in an adult's own registered one-to-one chat (once any one-to-one chat is registered, every command and routine needs `--chat`), and neither only on a platform without chat ids, as the household's direct-chat speaker. `--as <adult member>` is only for when the platform itself says who is writing, and is refused in group chats and in someone's own chat. `--home <folder>` picks the data folder and `--household <name>` the household. These work before or after the command, so they are left out of the sections below. Every command prints JSON; errors print `{"ok": false, "error", "hint", "code"}` and exit with code 1 (2 for a mistyped command); an `ask_owner` field is a question only the household owner may answer.
 
 ```text
 usage: fridge [-h] [--version] [--home HOME] [--household HOUSEHOLD] [--as MEMBER] [--chat CHAT]
@@ -277,7 +277,7 @@ Examples:
   fridge household settings
   fridge household settings --set week_start=monday --set units=us
   fridge household settings --set quiet_hours="22:00-07:00"
-  fridge household settings --set reminders_outside_chat=yes --owner-confirmed "yes, email is fine" --confirm 1c5e2a0-3f9b27d41c
+  fridge household settings --set reminders_outside_chat=yes --owner-confirmed "yes, allow it" --confirm 1c5e2a0-8d41f2-3f9b27d41c
 ```
 
 ### household delete
@@ -298,7 +298,7 @@ optional arguments:
 
 Examples:
   fridge household delete
-  fridge household delete --owner-confirmed "yes, delete it" --confirm 1c5e2a0-3f9b27d41c
+  fridge household delete --owner-confirmed "yes, delete it" --confirm 1c5e2a0-8d41f2-3f9b27d41c
 ```
 
 ## selftest
@@ -409,8 +409,9 @@ Add a member (owner). Kids and teens get only a first name or nickname, a colour
 
 optional arguments:
   -h, --help            show this help message and exit
-  --name NAME
+  --name NAME           First name, or a nickname; "Max (15)" makes a teen (the age isn't stored)
   --role {owner,adult,teen,kid}
+                        owner, adult, teen or kid (default: adult)
   --color COLOR         A palette colour name or #RRGGBB (default: the next unused one)
   --quiet-hours QUIET_HOURS
                         Adults: e.g. "22:00-07:00", or none
@@ -479,7 +480,7 @@ Examples:
   fridge member access Mateo --role teen
   fridge member access Sofia --set grocery=edit --set calendar=view
   fridge member access Luis --reset
-  fridge member access Zoe --role adult --owner-confirmed "yes, Zoe is 19" --confirm 1c5e2a0-3f9b27d41c
+  fridge member access Zoe --role adult --owner-confirmed "yes, Zoe is 19" --confirm 1c5e2a0-8d41f2-3f9b27d41c
 ```
 
 ### member stars
@@ -526,7 +527,7 @@ optional arguments:
 
 Examples:
   fridge member remove "Uncle Leo"
-  fridge member remove "Uncle Leo" --owner-confirmed "yes, remove Leo" --confirm 1c5e2a0-3f9b27d41c
+  fridge member remove "Uncle Leo" --owner-confirmed "yes, remove Uncle Leo" --confirm 1c5e2a0-8d41f2-3f9b27d41c
 ```
 
 ## who
@@ -581,7 +582,7 @@ optional arguments:
 Examples:
   fridge who chat family-group --type group --minors yes
   fridge who chat jo-dm --type direct --member Jo
-  fridge who chat jo-dm --type direct --member Jo --owner-confirmed "yes, Jo is 34" --confirm 1c5e2a0-3f9b27d41c
+  fridge who chat jo-dm --type direct --member Jo --owner-confirmed "yes, Jo is 34" --confirm 1c5e2a0-8d41f2-3f9b27d41c
 ```
 
 ### who link
@@ -609,7 +610,7 @@ optional arguments:
 
 Examples:
   fridge who link family-group --participant @sam --member Sam
-  fridge who link family-group --participant @sam --member Sam --owner-confirmed "yes, Sam is 42" --confirm 1c5e2a0-3f9b27d41c
+  fridge who link family-group --participant @sam --member Sam --owner-confirmed "yes, Sam is 42" --confirm 1c5e2a0-8d41f2-3f9b27d41c
   fridge who link family-group --participant @arjun --member Arjun
 ```
 

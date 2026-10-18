@@ -277,39 +277,45 @@ def _run(home, *args, now: str = "2026-10-19T08:00:00") -> dict:
 
 def _household_checks() -> None:
     with tempfile.TemporaryDirectory() as tmp:
-        _run(tmp, "setup", "--members", "Ana, Luis, Theo (kid)", "--country", "CA", "--timezone", "America/Toronto")
+        ana = ("--chat", "ana-dm")  # the owner's own one-to-one chat: from now on every command names its chat
+        _run(tmp, "setup", "--members", "Ana, Luis, Theo (kid)", "--country", "CA", "--timezone", "America/Toronto",
+             *ana)  # fmt: skip
+        _expect(_run(tmp, "today").get("code") == "which_chat", "a command ran without saying which chat")
         # Money to the cent, and an ambiguous amount refused.
-        _run(tmp, "budget", "category-defaults")
+        _run(tmp, "budget", "category-defaults", *ana)
         for value in ("0.10", "0.10", "0.10", "254.20"):
-            _run(tmp, "budget", "spend", value, "--category", "Groceries")
-        month = _run(tmp, "budget", "month")
+            _run(tmp, "budget", "spend", value, "--category", "Groceries", *ana)
+        month = _run(tmp, "budget", "month", *ana)
         _expect(Decimal(month["spent"]) == Decimal("254.50"), "budget totals to the cent")
-        _expect(_run(tmp, "budget", "spend", "1,500", "--category", "Fun")["code"] == "bad_number", "1,500 refused")
+        _expect(_run(tmp, "budget", "spend", "1,500", "--category", "Fun", *ana)["code"] == "bad_number",
+                "1,500 refused")  # fmt: skip
         # Sensitive notes never show in a group chat.
-        _run(tmp, "note", "add", "Wifi", "--body", "pw", "--sensitive")
-        _run(tmp, "who", "chat", "pair", "--type", "group", "--minors", "no")
-        _run(tmp, "who", "link", "pair", "--participant", "@ana", "--member", "Ana")
+        _run(tmp, "note", "add", "Wifi", "--body", "pw", "--sensitive", *ana)
+        _run(tmp, "who", "chat", "pair", "--type", "group", "--minors", "no", *ana)
+        _run(tmp, "who", "link", "pair", "--participant", "@ana", "--member", "Ana", *ana)
         group = _run(tmp, "note", "list", "--chat", "pair", "--from", "@ana")
         _expect(group["notes"] == [], "a sensitive note showed in a group chat")
-        # Reminders wait for quiet hours and are never repeated.
-        asked = _run(tmp, "who", "chat", "luis-dm", "--type", "direct", "--member", "Luis")
+        # Only a plain yes counts, once. Reminders wait for quiet hours and are never repeated.
+        register = ("who", "chat", "luis-dm", "--type", "direct", "--member", "Luis", *ana)
+        asked = _run(tmp, *register)
         _expect(bool(asked.get("ask_owner") and asked.get("confirm")), "an adult's chat was registered unasked")
-        _expect(_run(tmp, "who", "chat", "luis-dm", "--type", "direct", "--member", "Luis", "--owner-confirmed",
-                     "ok", "--confirm", asked["confirm"]).get("code") == "unclear_answer", "a vague ok counted as yes")
-        _run(tmp, "who", "chat", "luis-dm", "--type", "direct", "--member", "Luis", "--owner-confirmed", "yes",
-             "--confirm", asked["confirm"])
+        for vague in ("ok", "yes, next week", "yes lol jk"):
+            _expect(_run(tmp, *register, "--owner-confirmed", vague, "--confirm", asked["confirm"]).get("code") ==
+                    "unclear_answer", f"{vague!r} counted as a yes")  # fmt: skip
+        _run(tmp, *register, "--owner-confirmed", "yes", "--confirm", asked["confirm"])
         _run(tmp, "member", "edit", "Luis", "--reminders", "on", "--chat", "luis-dm")  # reminders are his own yes
-        _run(tmp, "member", "edit", "Luis", "--quiet-hours", "21:00-07:00", "--as", "Luis")
-        _run(tmp, "cal", "add", "Flight", "--date", "2026-10-21", "--time", "09:00", "--for", "Luis", "--remind", "10h")
-        held = _run(tmp, "remind", "due", now="2026-10-20T23:05:00")
+        _run(tmp, "member", "edit", "Luis", "--quiet-hours", "21:00-07:00", "--chat", "luis-dm")
+        _run(tmp, "cal", "add", "Flight", "--date", "2026-10-21", "--time", "09:00", "--for", "Luis", "--remind", "10h",
+             *ana)  # fmt: skip
+        held = _run(tmp, "remind", "due", *ana, now="2026-10-20T23:05:00")
         _expect(not held["send"] and held["held"], "a reminder went out during quiet hours")
-        sent = _run(tmp, "remind", "due", now="2026-10-21T07:01:00")
-        again = _run(tmp, "remind", "due", now="2026-10-21T07:02:00")
+        sent = _run(tmp, "remind", "due", *ana, now="2026-10-21T07:01:00")
+        again = _run(tmp, "remind", "due", *ana, now="2026-10-21T07:02:00")
         _expect(len(sent["send"]) == 1 and not again["send"], "a reminder was sent twice")
         # Calendar files round-trip across time zones.
-        _run(tmp, "cal", "add", "Swim", "--date", "tuesday", "--time", "17:30", "--repeat", "weekly")
-        _run(tmp, "cal", "skip", "Swim", "--on", "2026-10-27")
-        exported = _run(tmp, "ics", "export")
+        _run(tmp, "cal", "add", "Swim", "--date", "tuesday", "--time", "17:30", "--repeat", "weekly", *ana)
+        _run(tmp, "cal", "skip", "Swim", "--on", "2026-10-27", *ana)
+        exported = _run(tmp, "ics", "export", *ana)
         with tempfile.TemporaryDirectory() as other:
             _run(other, "setup", "--members", "Bo", "--country", "GB")
             _run(other, "ics", "import", exported["file"])
@@ -317,7 +323,7 @@ def _household_checks() -> None:
                       if o["title"] == "Swim"}  # fmt: skip
             _expect(london == {("2026-10-20", "22:30")}, f"the .ics round trip moved the times: {london}")
         # Printables are real PDF files.
-        week = _run(tmp, "print", "week")
+        week = _run(tmp, "print", "week", *ana)
         data = Path(week["files"][0]).read_bytes()
         _expect(data.startswith(b"%PDF-1.4") and data.rstrip().endswith(b"%%EOF"), "the fridge sheet isn't a PDF")
 
@@ -337,7 +343,7 @@ CHECKS = [
     ("ingredients: fractions, ranges, merging within a system, exact scaling", _ingredients_exact),
     ("recipes import from schema.org data in a saved page", _recipe_import),
     ("the week's list changes by a meal's share only; crossed-off items stay", _meal_list_follows_changes),
-    ("budget to the cent, sensitive notes, quiet hours, .ics time zones, printable PDFs", _household_checks),
+    ("which chat, a plain yes, budget to the cent, sensitive notes, quiet hours, .ics, PDFs", _household_checks),
 ]
 
 

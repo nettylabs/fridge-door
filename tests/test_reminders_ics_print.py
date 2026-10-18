@@ -24,13 +24,16 @@ class RemindersTest(HomeTest):
         return self.ok("remind", "due", *args, env={"FRIDGE_NOW": now})
 
     def test_event_reminders_go_to_adults_once(self):
-        self.confirmed("who", "chat", "luis-dm", "--type", "direct", "--member", "Luis", words="yes")
-        self.ok("cal", "add", "Dentist", "--date", "2026-10-20", "--time", "15:00", "--for", "Luis", "--remind", "1h")
-        self.assertEqual(self.due("2026-10-20T13:30:00")["send"], [])  # not yet
-        out = self.due("2026-10-20T14:05:00")
+        ana = ("--chat", "ana-dm")  # the owner's own chat runs the routine
+        self.ok("who", "chat", "ana-dm", "--type", "direct")
+        self.confirmed("who", "chat", "luis-dm", "--type", "direct", "--member", "Luis", *ana, words="yes")
+        self.ok("cal", "add", "Dentist", "--date", "2026-10-20", "--time", "15:00", "--for", "Luis", "--remind", "1h",
+                *ana)  # fmt: skip
+        self.assertEqual(self.due("2026-10-20T13:30:00", *ana)["send"], [])  # not yet
+        out = self.due("2026-10-20T14:05:00", *ana)
         self.assertEqual([(r["to"], r["chats"]) for r in out["send"]], [("Luis", ["luis-dm"])])
         self.assertIn("Dentist (Luis) in 55 minutes at 3pm", out["send"][0]["text"])  # worded when it's sent
-        self.assertEqual(self.due("2026-10-20T14:10:00")["send"], [])  # never twice
+        self.assertEqual(self.due("2026-10-20T14:10:00", *ana)["send"], [])  # never twice
 
     def test_kids_events_remind_the_adult_who_made_them(self):
         self.ok("cal", "add", "Piano", "--date", "2026-10-20", "--time", "16:00", "--for", "Theo", "--remind", "30m")
@@ -38,14 +41,16 @@ class RemindersTest(HomeTest):
         self.assertEqual([r["to"] for r in out["send"]], ["Ana"])
 
     def test_quiet_hours_hold_reminders_until_they_end(self):
-        self.confirmed("who", "chat", "luis-dm", "--type", "direct", "--member", "Luis", words="yes")
-        self.ok("member", "edit", "Luis", "--quiet-hours", "21:00-07:00", "--as", "Luis")
+        ana = ("--chat", "ana-dm")
+        self.ok("who", "chat", "ana-dm", "--type", "direct")
+        self.confirmed("who", "chat", "luis-dm", "--type", "direct", "--member", "Luis", *ana, words="yes")
+        self.ok("member", "edit", "Luis", "--quiet-hours", "21:00-07:00", "--chat", "luis-dm")
         self.ok("cal", "add", "Early flight", "--date", "2026-10-21", "--time", "09:00", "--for", "Luis",
-                "--remind", "10h")  # fires 23:00 the night before  # fmt: skip
-        out = self.due("2026-10-20T23:05:00")
+                "--remind", "10h", *ana)  # fires 23:00 the night before  # fmt: skip
+        out = self.due("2026-10-20T23:05:00", *ana)
         self.assertEqual(out["send"], [])
         self.assertEqual(out["held"][0]["until"][:16], "2026-10-21T07:00")
-        out = self.due("2026-10-21T07:01:00")
+        out = self.due("2026-10-21T07:01:00", *ana)
         self.assertEqual([r["to"] for r in out["send"]], ["Luis"])
 
     def test_old_reminders_are_dropped_not_sent_late(self):
@@ -82,7 +87,7 @@ class RemindersTest(HomeTest):
 
     def test_outside_the_chat_needs_the_owners_ok(self):
         self.assertFalse(self.ok("remind", "due")["outside_chat_ok"])
-        self.confirmed("household", "settings", "--set", "reminders_outside_chat=yes", words="yes, by email")
+        self.confirmed("household", "settings", "--set", "reminders_outside_chat=yes", words="yes")
         self.assertTrue(self.ok("remind", "due")["outside_chat_ok"])
 
 

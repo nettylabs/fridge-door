@@ -34,13 +34,13 @@ class WhoTest(HomeTest):
         out = self.err("needs_owner", "who", "link", "family", "--participant", "@luis", "--member", "Luis")
         self.assertIn("18 or older", out["ask_owner"])
         self.ok("who", "link", "family", "--participant", "@luis", "--member", "Luis",
-                "--owner-confirmed", "yes, he's my husband", "--confirm", out["confirm"])  # fmt: skip
+                "--owner-confirmed", "yes, he's 41", "--confirm", out["confirm"])  # fmt: skip
         self.ok("who", "link", "family", "--participant", "@ana", "--member", "Ana")  # the owner needs no check
-        self.ok("who", "chat", "luis-dm", "--type", "direct", "--member", "Luis")
         self.ok("who", "chat", "garden", "--type", "group", "--minors", "no")
         self.ok("who", "link", "garden", "--participant", "@lu", "--member", "Luis")  # already confirmed once
+        self.ok("who", "chat", "luis-dm", "--type", "direct", "--member", "Luis")  # and for his own chat
         record = Hub(self.home).household().member("M2")["chat_ok"]
-        self.assertEqual(record["owner_said"], "yes, he's my husband")
+        self.assertEqual(record["owner_said"], "yes, he's 41")
 
     def test_kids_and_teens_are_noted_never_linked(self):
         for handle, name in (("@sofia", "Sofia"), ("@mateo", "Mateo")):
@@ -97,16 +97,18 @@ class WhoTest(HomeTest):
         self.err("unknown_participant", "who", "am-i", "--chat", "family", "--from", "@luis")
 
     def test_a_removed_members_direct_chat_is_deleted_not_handed_to_the_owner(self):
-        self.confirmed("who", "chat", "luis-dm", "--type", "direct", "--member", "Luis", words="yes")
+        self.ok("who", "chat", "ana-dm", "--type", "direct")
+        self.confirmed("who", "chat", "luis-dm", "--type", "direct", "--member", "Luis", "--chat", "ana-dm")
         self.assertEqual(self.ok("who", "am-i", "--chat", "luis-dm")["member"]["name"], "Luis")
-        out = self.confirmed("member", "remove", "Luis", words="yes")
+        out = self.confirmed("member", "remove", "Luis", "--chat", "ana-dm", words="yes")
         self.assertIn("deleted their direct chat luis-dm", out["changes"])
         self.err("chat_not_linked", "who", "am-i", "--chat", "luis-dm")  # never falls back to Ana
         self.assertNotIn("luis-dm", Hub(self.home).data["chats"])
 
     def test_becoming_a_teen_deletes_their_direct_chat(self):
-        self.confirmed("who", "chat", "luis-dm", "--type", "direct", "--member", "Luis", words="yes")
-        out = self.ok("member", "access", "Luis", "--role", "teen")
+        self.ok("who", "chat", "ana-dm", "--type", "direct")
+        self.confirmed("who", "chat", "luis-dm", "--type", "direct", "--member", "Luis", "--chat", "ana-dm")
+        out = self.ok("member", "access", "Luis", "--role", "teen", "--chat", "ana-dm")
         self.assertEqual(out["deleted_chats"], ["luis-dm"])
         self.err("chat_not_linked", "who", "am-i", "--chat", "luis-dm")
 
@@ -120,7 +122,7 @@ class WhoTest(HomeTest):
         self.err("chat_not_linked", "who", "am-i", "--chat", "odd-dm")
 
     def test_removing_the_speaker_leaves_nobody_speaking_until_the_owner_says(self):
-        self.confirmed("who", "speaker", "Luis", words="yes, Luis is my partner")
+        self.confirmed("who", "speaker", "Luis", words="yes, Luis is 38")
         self.confirmed("member", "remove", "Luis", "--as", "Ana", words="yes")
         self.err("who_is_talking", "who", "am-i")  # not quietly the owner
         self.ok("who", "speaker", "Ana", "--as", "Ana")

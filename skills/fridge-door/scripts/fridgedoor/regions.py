@@ -2,10 +2,13 @@
 units and paper size. Week starts and date patterns follow Unicode CLDR locale data. Everything is a setting the
 household can change afterwards.
 
-Countries with several time zones are marked, with their main zones (ZONES): setup asks which one.
+Countries with several time zones are marked, with their main zones (ZONES): setup asks which one. For a country
+without defaults, the time zone database's own table (table_zones) says which zones it has.
 """
 
 from __future__ import annotations
+
+import os
 
 from .util import ToolError, fold
 
@@ -227,6 +230,34 @@ def defaults(code: str) -> dict:
         "several_time_zones": row[8],
         "known": code in _C,
     }
+
+
+def name_of(code: str) -> str:
+    """A country's English name ("RU" -> "Russia"), else its code."""
+    if code in _C:
+        return _C[code][0]
+    return next((name for c, name in (item.split(" ", 1) for item in _ISO.split("|")) if c == code), code)
+
+
+def table_zones(code: str) -> list:
+    """The time zones the time zone database lists for a country, as [(zone, where)], from its zone.tab (in the
+    system's zoneinfo folder, or the tzdata package's), or [] on a computer without that table."""
+    import zoneinfo
+
+    folders = list(zoneinfo.TZPATH)
+    try:
+        import tzdata
+
+        folders.append(os.path.join(os.path.dirname(tzdata.__file__), "zoneinfo"))
+    except ImportError:
+        pass
+    for folder in folders:
+        path = os.path.join(folder, "zone.tab")
+        if os.path.isfile(path):
+            with open(path, encoding="utf-8") as fh:
+                rows = [line.rstrip("\n").split("\t") for line in fh if not line.startswith("#")]
+            return [(row[2], row[3] if len(row) > 3 else "") for row in rows if len(row) > 2 and row[0] == code]
+    return []
 
 
 def all_codes() -> list:

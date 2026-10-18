@@ -80,7 +80,7 @@ class MemberCommandsTest(HomeTest):
         self.err("bad_permissions", "member", "access", "Sofia", "--set", "grocery")
 
     def test_a_new_role_resets_access_to_its_preset(self):
-        out = self.confirmed("member", "access", "Mateo", "--role", "adult", words="yes, he turned 18 in May")
+        out = self.confirmed("member", "access", "Mateo", "--role", "adult", words="yes, he turned 18")
         self.assertEqual(out["member"]["access"]["budget"], "edit")
         self.assertEqual(out["lists"], ["My Tasks"])  # now an adult: gets a personal list
         out = self.ok("member", "access", "Luis", "--role", "teen")
@@ -101,7 +101,7 @@ class MemberCommandsTest(HomeTest):
         hh = Hub(self.home).household()
         personal = [lst["id"] for lst in hh.data("todos")["lists"] if lst.get("owner") == "M2"]
         self.assertEqual(len(personal), 1)
-        out = self.confirmed("member", "remove", "Luis", words="yes, Luis moved out")
+        out = self.confirmed("member", "remove", "Luis", words="yes, remove Luis")
         self.assertIn("deleted their personal list (0 tasks)", out["changes"])
         hh = Hub(self.home).household()
         self.assertIsNone(hh.member("M2"))

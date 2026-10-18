@@ -11,5 +11,5 @@ lives here, the country, which province, state or city if the country has severa
 household name if we want one) in one message. List me first so I'm the owner, and register this
 chat as mine if it has an id. Kids and teens are only a first name or nickname, marked (kid) or
 (teen). Show me the summary, explain how the kids take part, and offer the morning Today summary,
-reminders (only for whoever says yes) and the weekly planning routine. If we chat with you in a
-group, help me register it.
+reminders (only for whoever says yes) and the weekly planning routine, each run with the right
+chat's `--chat`. If we chat with you in a group, help me register it.

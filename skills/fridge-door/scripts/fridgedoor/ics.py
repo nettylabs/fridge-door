@@ -19,7 +19,7 @@ import secrets
 from pathlib import Path
 
 from . import events, recur
-from .util import ToolError, clean_text, get_tz, now, now_stamp, plural, tz_known
+from .util import ToolError, clean_text, get_tz, now_stamp, plural, tz_known, utc_now
 
 PRODID = "-//Netty Labs//Fridge Door//EN"
 MAX_BYTES = 5 * 1024 * 1024
@@ -166,7 +166,7 @@ def export(ctx, member_id: str | None = None) -> tuple:
     hh = ctx.household
     key = _calendar_key(hh)
     tz_name = hh.tz()
-    stamp = now("UTC").strftime("%Y%m%dT%H%M%SZ")
+    stamp = utc_now().strftime("%Y%m%dT%H%M%SZ")
     lines = ["BEGIN:VCALENDAR", "VERSION:2.0", f"PRODID:{PRODID}", "CALSCALE:GREGORIAN",
              f"X-WR-CALNAME:{_escape(hh.name)}", f"X-WR-TIMEZONE:{tz_name}"]  # fmt: skip
     chosen = [e for e in hh.data("calendar")["events"] if events.visible(ctx.viewer, e)

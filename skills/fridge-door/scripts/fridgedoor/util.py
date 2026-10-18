@@ -233,12 +233,16 @@ def set_local_tz(name: str | None) -> None:
     _LOCAL_TZ["name"] = name
 
 
+def utc_now() -> _dt.datetime:
+    """The current moment in UTC, read from FRIDGE_NOW the same way now() reads it for the household."""
+    if os.environ.get("FRIDGE_NOW"):
+        return now(_LOCAL_TZ["name"] or "UTC").astimezone(_dt.timezone.utc)
+    return _dt.datetime.now(_dt.timezone.utc)
+
+
 def now_stamp() -> str:
     """UTC time stamp for records and the activity log."""
-    override = os.environ.get("FRIDGE_NOW")
-    if override:
-        return now(_LOCAL_TZ["name"] or "UTC").astimezone(_dt.timezone.utc).replace(microsecond=0).isoformat()
-    return _dt.datetime.now(_dt.timezone.utc).replace(microsecond=0).isoformat()
+    return utc_now().replace(microsecond=0).isoformat()
 
 
 def parse_stamp(text: str | None) -> _dt.datetime | None:

@@ -35,8 +35,9 @@
   chat isn't sent. Task notices are only read out in a person's own chat.
 - Reminders are opt-in: an adult gets them only after turning them on in their own chat, and nobody can turn
   them on for someone else.
-- Once the owner's own chat is registered, every message must name the chat it came from, and a chat nobody
-  registered is refused, so no other chat can act as the owner.
+- Once any one-to-one chat is registered, every message, in every household in the data folder, must name the
+  chat it came from, and a chat nobody registered is refused, so no other chat can act as anyone. The owner's
+  chat follows them into households they add; another adult's chat belongs to one household.
 - The owner's export leaves out other members' private events, private notes, personal to-do lists and notices.
 - Printouts and calendar files are saved in a folder for the chat they were made in (a person's own folder, or a
   group chat's), so one audience's file never overwrites another's. A person's folder is deleted if they leave
@@ -46,21 +47,27 @@
   from it shows in a group chat with kids in it, the owner's export leaves others' private ones out, and
   removing a member clears theirs.
 - Only the owner changes members, roles, access and chat links, and removing a member or deleting the household
-  needs the owner's own confirmation. Only a clear yes to that exact question counts: each question comes with a
-  code that the yes must be sent back with, and a vague, conditional or negative answer ("ok", "sure", an emoji,
-  "yes but later", "absolutely not") is refused.
+  needs the owner's own confirmation. Only a plain yes as the whole answer counts ("yes", "go ahead", "yes,
+  remove Luis"): a vague, conditional, delayed, joking or negative answer ("ok", "sure", an emoji, "yes, next
+  week", "yes lol jk", "absolutely not"), or one naming someone else, is refused. Each question comes with a code
+  that the yes must be sent back with; it works once, for a day, for that one question. A code proves the
+  toolkit asked that question, not that the owner saw it: the agent gets the code with the question and is
+  trusted to ask. It ties an answer to its question rather than proving who answered, so anyone who can run the
+  toolkit on the data folder could work one out.
 
 ## Children's data
 
 Fridge Door is for adults; kids and teens take part through their parents.
 
 - Kids and teens never chat with the agent. Only adults can be linked to a chat or have a one-to-one chat
-  registered, after the owner's clear yes that they're 18 or older; an answer that mentions an age under 18, a
-  school grade or "almost 18" is refused. Making a kid or teen an adult member asks the same question.
+  registered, after the owner's plain yes that they're 18 or older (perhaps with one age of 18 or over); an
+  answer that mentions an age under 18, a school grade or "almost 18" is refused, and anything else is asked
+  again. Making a kid or teen an adult member, or adding someone as "Max (17)", can't skip it.
 - A teen's handle in a group chat can be noted so their messages are recognised and never acted on; that chat
   then shows only chores and the grocery list.
-- A shared note that names a kid or teen next to health or school details is refused: it has to be sensitive
-  (adults only, in their own chats) or private, so it never reaches a group chat or the fridge sheet.
+- A shared note that names a kid or teen (or "the kids") next to health, school, address or ID details is
+  refused: it has to be sensitive (adults only, in their own chats) or private, so it never reaches a group chat
+  or the fridge sheet.
 - A kid or teen is stored as a first name or nickname, a colour, their chores and a star count, with no place
   for anything else. The toolkit takes a one-word name only (no surname), refuses ages and numbers in it, and
   keeps only the day and month of a child's birthday.
