@@ -1,7 +1,7 @@
 {
   "name": "fridge-door",
   "displayName": "Fridge Door",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "The household organizer: a shared calendar, to-dos and chores with kids' stars, grocery lists sorted by aisle, recipes that go straight to the list, a weekly meal planner, notes, a simple household budget and a printable fridge sheet. For any household in any country. Runs locally; no account needed.",
   "author": {
     "name": "Netty Labs"

@@ -47,6 +47,11 @@ def fridge(home, *args, env: dict | None = None):
         raise AssertionError(f"not JSON (exit {code}): {text[:500]}") from None
 
 
+MAIN_ZONES = {"AU": "Australia/Sydney", "BR": "America/Sao_Paulo", "CA": "America/Toronto", "CL": "America/Santiago",
+              "ES": "Europe/Madrid", "ID": "Asia/Jakarta", "MX": "America/Mexico_City", "PT": "Europe/Lisbon",
+              "US": "America/New_York"}  # fmt: skip
+
+
 class HomeTest(unittest.TestCase):
     """A fresh data folder per test, with a fixed clock (Monday 19 Oct 2026, 08:00 local)."""
 
@@ -76,5 +81,20 @@ class HomeTest(unittest.TestCase):
         self.assertEqual(out.get("code"), code_name, out)
         return out
 
+    def confirmed(self, *args, words="yes", **kw):
+        """Run a command that needs the owner's yes the way the agent must: first without an answer (the toolkit
+        returns the question and its code), then with the owner's words and that code. Commands with nothing to
+        confirm just run."""
+        code, out = fridge(self.home, *args, **kw)
+        if code == 0:
+            return out
+        self.assertEqual(out.get("code"), "needs_owner", out)
+        self.assertTrue(out.get("ask_owner") and out.get("confirm"), out)
+        return self.ok(*args, "--owner-confirmed", words, "--confirm", out["confirm"], **kw)
+
     def setup_family(self, members="Ana, Luis, Sofia (kid), Mateo (teen)", country="CA", name="Test home", *extra):
+        """Set up a household. In a country with several time zones, setup asks which one (needs_timezone): a test
+        gets the country's main zone unless it passes --timezone itself."""
+        if country in MAIN_ZONES and "--timezone" not in extra:
+            extra = (*extra, "--timezone", MAIN_ZONES[country])
         return self.ok("setup", "--name", name, "--members", members, "--country", country, *extra)

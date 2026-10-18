@@ -292,7 +292,13 @@ def _household_checks() -> None:
         group = _run(tmp, "note", "list", "--chat", "pair", "--from", "@ana")
         _expect(group["notes"] == [], "a sensitive note showed in a group chat")
         # Reminders wait for quiet hours and are never repeated.
-        _run(tmp, "who", "chat", "luis-dm", "--type", "direct", "--member", "Luis", "--owner-confirmed", "yes")
+        asked = _run(tmp, "who", "chat", "luis-dm", "--type", "direct", "--member", "Luis")
+        _expect(bool(asked.get("ask_owner") and asked.get("confirm")), "an adult's chat was registered unasked")
+        _expect(_run(tmp, "who", "chat", "luis-dm", "--type", "direct", "--member", "Luis", "--owner-confirmed",
+                     "ok", "--confirm", asked["confirm"]).get("code") == "unclear_answer", "a vague ok counted as yes")
+        _run(tmp, "who", "chat", "luis-dm", "--type", "direct", "--member", "Luis", "--owner-confirmed", "yes",
+             "--confirm", asked["confirm"])
+        _run(tmp, "member", "edit", "Luis", "--reminders", "on", "--chat", "luis-dm")  # reminders are his own yes
         _run(tmp, "member", "edit", "Luis", "--quiet-hours", "21:00-07:00", "--as", "Luis")
         _run(tmp, "cal", "add", "Flight", "--date", "2026-10-21", "--time", "09:00", "--for", "Luis", "--remind", "10h")
         held = _run(tmp, "remind", "due", now="2026-10-20T23:05:00")

@@ -7,13 +7,13 @@ Who is talking goes with every command: `--chat <chat-id> --from <participant>` 
 ```text
 usage: fridge [-h] [--version] [--home HOME] [--household HOUSEHOLD] [--as MEMBER] [--chat CHAT]
               [--from PARTICIPANT]
-              {setup,doctor,export,household,selftest,demo,member,who,shop,todo,notices,today,cal,recipe,pantry,meal,note,budget,remind,ics,print}
+              {setup,doctor,export,household,selftest,demo,member,who,shop,todo,notices,today,cal,recipe,pantry,meal,note,budget,bin,remind,ics,print}
               ...
 
 Fridge Door: a household organizer for any household in any country. Shared calendar, to-dos and chores, grocery lists, recipes, meal plans, notes and a budget.
 
 positional arguments:
-  {setup,doctor,export,household,selftest,demo,member,who,shop,todo,notices,today,cal,recipe,pantry,meal,note,budget,remind,ics,print}
+  {setup,doctor,export,household,selftest,demo,member,who,shop,todo,notices,today,cal,recipe,pantry,meal,note,budget,bin,remind,ics,print}
     setup               Set up the first household in one step: its name, who's in it and the country
                         (everything else defaults).
     doctor              Show the setup status and what's missing.
@@ -37,6 +37,8 @@ positional arguments:
     note                Notes: shared or private, checklists, folders and tags, pinned notes, sensitive
                         notes.
     budget              The household budget: categories, expenses, bills, savings goals, month reports.
+    bin                 Deleted tasks, events, notes, recipes and budget items, kept for the retention
+                        period.
     remind              Reminders for events, birthdays and bills, respecting quiet hours.
     ics                 Calendar files (.ics): export to Google, Apple or Outlook, or import from them.
     print               Printables: fridge sheet, calendar, shopping checklist, recipe card, budget report.
@@ -257,7 +259,7 @@ Examples:
 ```text
 usage: fridge household settings [-h] [--home HOME] [--household HOUSEHOLD] [--as MEMBER] [--chat CHAT]
                                  [--from PARTICIPANT] [--set SET] [--owner-confirmed OWNER_CONFIRMED]
-                                 [--dry-run]
+                                 [--confirm CONFIRM] [--dry-run]
 
 Show the settings, or change them with --set key=value (owner).
 
@@ -268,20 +270,22 @@ optional arguments:
                         quiet_hours, sensitive_notes_in_groups, reminders_outside_chat
   --owner-confirmed OWNER_CONFIRMED
                         The owner's own words, for settings that need their OK
+  --confirm CONFIRM     The code that came with the owner's question (confirm)
   --dry-run
 
 Examples:
   fridge household settings
   fridge household settings --set week_start=monday --set units=us
   fridge household settings --set quiet_hours="22:00-07:00"
-  fridge household settings --set reminders_outside_chat=yes --owner-confirmed "yes, email is fine"
+  fridge household settings --set reminders_outside_chat=yes --owner-confirmed "yes, email is fine" --confirm 1c5e2a0-3f9b27d41c
 ```
 
 ### household delete
 
 ```text
 usage: fridge household delete [-h] [--home HOME] [--household HOUSEHOLD] [--as MEMBER] [--chat CHAT]
-                               [--from PARTICIPANT] [--owner-confirmed OWNER_CONFIRMED]
+                               [--from PARTICIPANT] [--owner-confirmed OWNER_CONFIRMED] [--confirm CONFIRM]
+                               [--dry-run]
 
 Delete this household and everything in it (owner, direct chat, needs the owner's words).
 
@@ -289,9 +293,12 @@ optional arguments:
   -h, --help            show this help message and exit
   --owner-confirmed OWNER_CONFIRMED
                         The owner's own words confirming the deletion
+  --confirm CONFIRM     The code that came with the owner's question (confirm)
+  --dry-run             Say what would be deleted (no owner's yes needed)
 
 Examples:
-  fridge household delete --owner-confirmed "yes, delete it"
+  fridge household delete
+  fridge household delete --owner-confirmed "yes, delete it" --confirm 1c5e2a0-3f9b27d41c
 ```
 
 ## selftest
@@ -313,7 +320,7 @@ Examples:
 
 ```text
 usage: fridge demo [-h] [--home HOME] [--household HOUSEHOLD] [--as MEMBER] [--chat CHAT]
-                   [--from PARTICIPANT] [--region {AU,CA,GB,US}] [--force]
+                   [--from PARTICIPANT] [--region {AU,CA,GB,US}] [--force] [--timezone TIMEZONE]
 
 Create a sample household in an empty folder (use --home): CA family of five, GB couple, AU share house, US single parent.
 
@@ -322,6 +329,7 @@ optional arguments:
   --region {AU,CA,GB,US}
                         Which sample household (default CA)
   --force               Add the demo household even if the folder has data
+  --timezone TIMEZONE   The person's own time zone (IANA name), so the demo's day matches theirs
 
 Examples:
   fridge --home /tmp/fridge-demo demo
@@ -418,7 +426,7 @@ Examples:
 ```text
 usage: fridge member edit [-h] [--home HOME] [--household HOUSEHOLD] [--as MEMBER] [--chat CHAT]
                           [--from PARTICIPANT] [--name NAME] [--color COLOR] [--quiet-hours QUIET_HOURS]
-                          [--today-sections TODAY_SECTIONS] [--dry-run]
+                          [--today-sections TODAY_SECTIONS] [--reminders {on,off}] [--dry-run]
                           member
 
 Change a member's name, colour, quiet hours or Today sections (yourself, or anyone if you're the owner).
@@ -434,6 +442,7 @@ optional arguments:
                         "HH:MM-HH:MM", none, or default (the household's)
   --today-sections TODAY_SECTIONS
                         Comma list from: events, tasks, dinner, lists, birthdays, bills, notices; or all
+  --reminders {on,off}  on: they'd like reminders (only they can say so); off
   --dry-run
 
 Examples:
@@ -447,7 +456,7 @@ Examples:
 ```text
 usage: fridge member access [-h] [--home HOME] [--household HOUSEHOLD] [--as MEMBER] [--chat CHAT]
                             [--from PARTICIPANT] [--role {owner,adult,teen,kid}] [--set SET] [--reset]
-                            [--dry-run]
+                            [--owner-confirmed OWNER_CONFIRMED] [--confirm CONFIRM] [--dry-run]
                             member
 
 Show or change a member's role and per-module access (owner). A new role resets access to its preset.
@@ -460,6 +469,9 @@ optional arguments:
   --role {owner,adult,teen,kid}
   --set SET             module=level (none, view or edit); repeat for more
   --reset               Back to the role's preset
+  --owner-confirmed OWNER_CONFIRMED
+                        Making a kid or teen an adult: the owner's own words that they're 18+
+  --confirm CONFIRM     The code that came with the owner's question (confirm)
   --dry-run
 
 Examples:
@@ -467,6 +479,7 @@ Examples:
   fridge member access Mateo --role teen
   fridge member access Sofia --set grocery=edit --set calendar=view
   fridge member access Luis --reset
+  fridge member access Zoe --role adult --owner-confirmed "yes, Zoe is 19" --confirm 1c5e2a0-3f9b27d41c
 ```
 
 ### member stars
@@ -495,7 +508,8 @@ Examples:
 
 ```text
 usage: fridge member remove [-h] [--home HOME] [--household HOUSEHOLD] [--as MEMBER] [--chat CHAT]
-                            [--from PARTICIPANT] [--owner-confirmed OWNER_CONFIRMED] [--dry-run]
+                            [--from PARTICIPANT] [--owner-confirmed OWNER_CONFIRMED] [--confirm CONFIRM]
+                            [--dry-run]
                             member
 
 Remove a member and erase their details (owner, needs the owner's own words).
@@ -507,10 +521,12 @@ optional arguments:
   -h, --help            show this help message and exit
   --owner-confirmed OWNER_CONFIRMED
                         The owner's own words confirming the removal
+  --confirm CONFIRM     The code that came with the owner's question (confirm)
   --dry-run
 
 Examples:
-  fridge member remove "Uncle Leo" --owner-confirmed "yes, remove Leo"
+  fridge member remove "Uncle Leo"
+  fridge member remove "Uncle Leo" --owner-confirmed "yes, remove Leo" --confirm 1c5e2a0-3f9b27d41c
 ```
 
 ## who
@@ -544,7 +560,7 @@ optional arguments:
 ```text
 usage: fridge who chat [-h] [--home HOME] [--household HOUSEHOLD] [--as MEMBER] [--chat CHAT]
                        [--from PARTICIPANT] --type {group,direct} [--minors MINORS] [--member MEMBER]
-                       [--owner-confirmed OWNER_CONFIRMED] [--dry-run]
+                       [--owner-confirmed OWNER_CONFIRMED] [--confirm CONFIRM] [--dry-run]
                        chat_id
 
 Register a chat with this household (owner). Group chats must say whether anyone under 18 is in them.
@@ -559,11 +575,13 @@ optional arguments:
   --member MEMBER       For a direct chat: whose chat it is (default: you)
   --owner-confirmed OWNER_CONFIRMED
                         The owner's own words confirming that person is 18 or older
+  --confirm CONFIRM     The code that came with the owner's question (confirm)
   --dry-run             Show what would happen without saving
 
 Examples:
   fridge who chat family-group --type group --minors yes
-  fridge who chat jo-dm --type direct --member Jo --owner-confirmed "yes, Jo is 34"
+  fridge who chat jo-dm --type direct --member Jo
+  fridge who chat jo-dm --type direct --member Jo --owner-confirmed "yes, Jo is 34" --confirm 1c5e2a0-3f9b27d41c
 ```
 
 ### who link
@@ -571,7 +589,7 @@ Examples:
 ```text
 usage: fridge who link [-h] [--home HOME] [--household HOUSEHOLD] [--as MEMBER] [--chat CHAT]
                        [--from PARTICIPANT] --participant PARTICIPANT --member MEMBER
-                       [--owner-confirmed OWNER_CONFIRMED] [--dry-run]
+                       [--owner-confirmed OWNER_CONFIRMED] [--confirm CONFIRM] [--dry-run]
                        chat_id
 
 Link a group-chat participant to an adult member (owner). The first link asks the owner to confirm 18+. A kid's or teen's handle is noted instead: they're recognised, never act, and the chat counts as having kids in it.
@@ -586,11 +604,12 @@ optional arguments:
   --member MEMBER       The member (name or id)
   --owner-confirmed OWNER_CONFIRMED
                         The owner's own words confirming the person is 18 or older
+  --confirm CONFIRM     The code that came with the owner's question (confirm)
   --dry-run
 
 Examples:
   fridge who link family-group --participant @sam --member Sam
-  fridge who link family-group --participant @sam --member Sam --owner-confirmed "yes, Sam is 42"
+  fridge who link family-group --participant @sam --member Sam --owner-confirmed "yes, Sam is 42" --confirm 1c5e2a0-3f9b27d41c
   fridge who link family-group --participant @arjun --member Arjun
 ```
 
@@ -637,7 +656,7 @@ Examples:
 
 ```text
 usage: fridge who speaker [-h] [--home HOME] [--household HOUSEHOLD] [--as MEMBER] [--chat CHAT]
-                          [--from PARTICIPANT] [--owner-confirmed OWNER_CONFIRMED]
+                          [--from PARTICIPANT] [--owner-confirmed OWNER_CONFIRMED] [--confirm CONFIRM]
                           member
 
 Choose who's talking in direct chats for this household (owner).
@@ -649,6 +668,7 @@ optional arguments:
   -h, --help            show this help message and exit
   --owner-confirmed OWNER_CONFIRMED
                         The owner's own words confirming that person is 18 or older
+  --confirm CONFIRM     The code that came with the owner's question (confirm)
 
 Examples:
   fridge who speaker Ana
@@ -793,15 +813,20 @@ Examples:
 
 ```text
 usage: fridge shop delete [-h] [--home HOME] [--household HOUSEHOLD] [--as MEMBER] [--chat CHAT]
-                          [--from PARTICIPANT] --list LIST
+                          [--from PARTICIPANT] [--list LIST]
+                          [name]
 
 Delete a list (restorable for the retention period).
 
+positional arguments:
+  name                  The list
+
 optional arguments:
   -h, --help            show this help message and exit
-  --list LIST
+  --list LIST           The list (the same as giving its name)
 
 Examples:
+  fridge shop delete Hardware
   fridge shop delete --list Hardware
 ```
 
@@ -809,19 +834,21 @@ Examples:
 
 ```text
 usage: fridge shop restore [-h] [--home HOME] [--household HOUSEHOLD] [--as MEMBER] [--chat CHAT]
-                           [--from PARTICIPANT]
-                           list
+                           [--from PARTICIPANT] [--list LIST]
+                           [name]
 
 Bring back a deleted list.
 
 positional arguments:
-  list
+  name                  The deleted list
 
 optional arguments:
   -h, --help            show this help message and exit
+  --list LIST           The deleted list (the same as giving its name)
 
 Examples:
   fridge shop restore Hardware
+  fridge shop restore --list Hardware
 ```
 
 ### shop add
@@ -2950,6 +2977,65 @@ optional arguments:
 
 Examples:
   fridge budget goal-delete "Holiday fund"
+```
+
+## bin
+
+```text
+usage: fridge bin [-h] [--home HOME] [--household HOUSEHOLD] [--as MEMBER] [--chat CHAT]
+                  [--from PARTICIPANT]
+                  {show,restore} ...
+
+Deleted tasks, events, notes, recipes and budget items, kept for the retention period.
+
+positional arguments:
+  {show,restore}
+    show                What's in the bin that you may see, newest first, and until when.
+    restore             Put something deleted back where it was (by its name, or its id for an expense).
+
+optional arguments:
+  -h, --help            show this help message and exit
+```
+
+### bin show
+
+```text
+usage: fridge bin show [-h] [--home HOME] [--household HOUSEHOLD] [--as MEMBER] [--chat CHAT]
+                       [--from PARTICIPANT] [--kind {task,event,note,recipe,expense,bill,goal,category}]
+
+What's in the bin that you may see, newest first, and until when.
+
+optional arguments:
+  -h, --help            show this help message and exit
+  --kind {task,event,note,recipe,expense,bill,goal,category}
+
+Examples:
+  fridge bin show
+  fridge bin show --kind event
+```
+
+### bin restore
+
+```text
+usage: fridge bin restore [-h] [--home HOME] [--household HOUSEHOLD] [--as MEMBER] [--chat CHAT]
+                          [--from PARTICIPANT] [--kind {task,event,note,recipe,expense,bill,goal,category}]
+                          [--dry-run]
+                          item
+
+Put something deleted back where it was (by its name, or its id for an expense).
+
+positional arguments:
+  item                  What to restore: its name, or an id such as X12
+
+optional arguments:
+  -h, --help            show this help message and exit
+  --kind {task,event,note,recipe,expense,bill,goal,category}
+  --dry-run
+
+Examples:
+  fridge bin restore "Fix the gate"
+  fridge bin restore X12
+  fridge bin restore Dentist --kind event
 ```
 
 ## remind

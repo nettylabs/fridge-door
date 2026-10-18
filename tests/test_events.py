@@ -71,7 +71,7 @@ class CalendarTest(HomeTest):
         self.err("not_found", "cal", "edit", "Therapy", "--time", "13:00", "--as", "Luis")
         self.ok("who", "chat", "parents", "--type", "group", "--minors", "no")
         self.ok("who", "link", "parents", "--participant", "@ana", "--member", "Ana")
-        self.ok("who", "link", "parents", "--participant", "@luis", "--member", "Luis", "--owner-confirmed", "yes")
+        self.confirmed("who", "link", "parents", "--participant", "@luis", "--member", "Luis", words="yes")
         group = {o["title"] for o in self.agenda("--days", "7", "--chat", "parents", "--from", "@ana")}
         self.assertEqual(group, {"Gift planning"})  # private stays out; both parents are on the gift planning
 

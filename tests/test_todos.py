@@ -88,7 +88,7 @@ class TodoCommandsTest(HomeTest):
     def test_assigning_someone_in_the_group_tells_them_there(self):
         self.ok("who", "chat", "fam", "--type", "group", "--minors", "no")
         self.ok("who", "link", "fam", "--participant", "@ana", "--member", "Ana")
-        self.ok("who", "link", "fam", "--participant", "@luis", "--member", "Luis", "--owner-confirmed", "yes")
+        self.confirmed("who", "link", "fam", "--participant", "@luis", "--member", "Luis", words="yes")
         out = self.ok("todo", "add", "Fix the gate", "--assign", "Luis", "--chat", "fam", "--from", "@ana")
         self.assertEqual(out["delivery"], "in_this_chat")
         self.assertNotIn("pending_notices", self.ok("todo", "show", "--as", "Luis"))
@@ -122,7 +122,7 @@ class TodoCommandsTest(HomeTest):
 
     def test_rotation_skips_someone_who_left(self):
         self.ok("todo", "add", "Dishes", "--repeat", "daily", "--rotate", "Theo, Lily, Zoe")
-        self.ok("member", "remove", "Lily", "--owner-confirmed", "yes")
+        self.confirmed("member", "remove", "Lily", words="yes")
         out = self.ok("todo", "done", "Dishes")
         self.assertEqual(out["results"][0]["next"]["assignee"], "Zoe")
 

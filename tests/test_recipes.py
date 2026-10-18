@@ -35,7 +35,7 @@ class ImporterTest(unittest.TestCase):
         self.assertEqual(r["ingredients"][-1], "salt to taste")  # tags stripped
         self.assertEqual(r["steps"], ["Chili: Brown the beef.", "Add the rest.", "Serve with rice."])
         self.assertEqual(r["tags"], ["dinner", "easy", "mexican", "main course"])
-        self.assertEqual(r["image_url"], "https://example.com/chili.jpg")
+        self.assertNotIn("image_url", r)  # the page's image link isn't kept (never shown; can carry tracking)
         self.assertEqual(r["source_url"], "https://example.com/chili")
 
     def test_plain_recipe_with_string_instructions(self):

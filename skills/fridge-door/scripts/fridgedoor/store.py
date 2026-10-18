@@ -18,7 +18,9 @@ from __future__ import annotations
 import contextlib
 import copy
 import datetime as _dt
+import hashlib
 import json
+import re
 import shutil
 import zipfile
 from pathlib import Path
@@ -137,6 +139,10 @@ class Household:
     def __init__(self, hub: Hub, entry: dict):
         self.hub = hub
         self.id = entry["id"]
+        if not re.fullmatch(r"H\d+", str(entry.get("folder") or "")):  # never a path outside the data folder
+            raise ToolError(f"hub.json names a strange folder for {entry.get('name') or entry['id']!r}.",
+                            hint="Restore hub.json from a backup; Fridge Door only uses folders named H1, H2...",
+                            code="bad_data")  # fmt: skip
         self.path = hub.home / "households" / entry["folder"]
         self._cache: dict = {}
         self._dirty: set = set()
@@ -241,6 +247,8 @@ class Household:
                 if not dry_run:
                     for name in sorted(self._dirty):
                         filename = "household.json" if name == "household" else f"{name}.json"
+                        if name != "household" and self._cache[name].get("bin"):
+                            self._empty_bin(self._cache[name])
                         write_json(self.path / filename, self._cache[name])
                     self._flush_log()
             finally:
@@ -249,6 +257,12 @@ class Household:
                 self._log.clear()
                 if dry_run:
                     self._cache.clear()  # forget the unsaved changes
+
+    def _empty_bin(self, data: dict) -> None:
+        """Deleted things older than the retention period leave the bin (bin.py) for good."""
+        days = int(self.settings.get("retention_days") or DEFAULT_RETENTION_DAYS)
+        cutoff = now("UTC") - _dt.timedelta(days=days)
+        data["bin"] = [e for e in data["bin"] if (parse_stamp(e.get("deleted_at")) or cutoff) >= cutoff]
 
     def touch(self, name: str = "household") -> None:
         """Mark a file as changed, so the transaction saves it."""
@@ -326,6 +340,18 @@ class Household:
 
     def output_dir(self) -> Path:
         folder = self.path / "output"
+        folder.mkdir(parents=True, exist_ok=True)
+        return folder
+
+    def chat_output(self, chat_id: str) -> Path:
+        """A group chat's own printouts folder (not created)."""
+        slug = "".join(c if c.isalnum() or c in "_-" else "-" for c in chat_id).strip("-").lower()[:40] or "chat"
+        return self.path / "output" / "chats" / f"{slug}-{hashlib.sha1(chat_id.encode()).hexdigest()[:6]}"
+
+    def output_for(self, member_id: str, group_chat: str | None = None) -> Path:
+        """Where a printout or calendar file goes: the group chat's own folder, or else the person's own folder
+        (deleted if they leave). Files made for different people and chats never overwrite each other."""
+        folder = self.chat_output(group_chat) if group_chat else self.path / "output" / "private" / member_id
         folder.mkdir(parents=True, exist_ok=True)
         return folder
 

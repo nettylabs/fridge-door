@@ -14,7 +14,7 @@ import datetime as _dt
 import re
 from pathlib import Path
 
-from . import access, notices, recur
+from . import access, notices, recur, trash
 from .util import ToolError, clean_text, day_text, fold, get_tz, match_one, now_stamp, parse_stamp, plural
 
 HOUSEHOLD_LIST = "Household Tasks"
@@ -97,6 +97,19 @@ def forget_member(hh, member_id: str) -> list:
         for key in ("created_by", "completed_by", "star_to"):
             if task.get(key) == member_id:
                 task[key] = None
+
+    def scrub(task: dict) -> None:  # the same, for tasks in the bin (no turns to pass on)
+        rotation = task.get("rotation")
+        if rotation and member_id in rotation.get("members", []):
+            rotation["members"] = [m for m in rotation["members"] if m != member_id]
+            rotation["index"] = rotation.get("index", 0) % len(rotation["members"]) if rotation["members"] else 0
+            if not rotation["members"]:
+                task["rotation"] = None
+        for key in ("assignee", "created_by", "completed_by", "star_to"):
+            if task.get(key) == member_id:
+                task[key] = None
+
+    trash.forget(hh, "todos", member_id, lambda t: t.get("list") in personal, scrub)
     if passed:
         changes.append(f"passed their turn on {', '.join(dict.fromkeys(passed))} to the next person")
     if unassigned:
@@ -259,9 +272,29 @@ def prune_done(hh, data: dict) -> int:
 # --------------------------------------------------------------------------- finding tasks
 
 
+def for_kids(hh, data: dict, tasks: list) -> list:
+    """In a group chat with kids in it, to-dos are only chores: a task a kid or teen is on (assigned, or taking
+    turns), or a repeating one nobody is on. Subtasks go with their task."""
+    minors = {m["id"] for m in hh.members if access.is_minor(m)}
+    by_id = {t["id"]: t for t in data["tasks"]}
+
+    def chore(task: dict) -> bool:
+        task = by_id.get(task.get("parent")) or task
+        if task.get("assignee") in minors or set((task.get("rotation") or {}).get("members", [])) & minors:
+            return True
+        return bool(task.get("rrule")) and not task.get("assignee")
+
+    return [t for t in tasks if chore(t)]
+
+
+def kid_level(ctx, data: dict) -> dict:
+    """The to-dos data as this chat may see it: chores only when kids are in it (for_kids)."""
+    return dict(data, tasks=for_kids(ctx.household, data, data["tasks"])) if ctx.viewer.minors_present else data
+
+
 def visible_tasks(ctx, data: dict) -> list:
     lists = {lst["id"] for lst in visible_lists(ctx, data)}
-    return [t for t in data["tasks"] if t["list"] in lists]
+    return [t for t in kid_level(ctx, data)["tasks"] if t["list"] in lists]
 
 
 def find_task(ctx, data: dict, query, include_done: bool = True) -> dict:
@@ -595,6 +628,7 @@ def _materialize_next(hh, data: dict, task: dict, completed_day: _dt.date) -> di
         "created_at": now_stamp(),
     }
     subtasks = [t for t in data["tasks"] if t.get("parent") == task["id"]]
+    new["made"] = dict(_as_made(new), subtasks=len(subtasks))  # how it started, so undo can tell if it was changed
     data["tasks"].append(new)
     for index, sub in enumerate(subtasks):  # the next one starts with the same checklist, all unticked
         data["tasks"].append({
@@ -604,6 +638,23 @@ def _materialize_next(hh, data: dict, task: dict, completed_day: _dt.date) -> di
             "created_by": sub.get("created_by"), "created_at": now_stamp(),
         })  # fmt: skip
     return new
+
+
+def _as_made(task: dict) -> dict:
+    keys = ("list", "title", "notes", "assignee", "due", "priority", "photos", "rrule", "rotation")
+    return {key: task.get(key) for key in keys}
+
+
+def _untouched_next(data: dict, task: dict) -> tuple:
+    """The next occurrence finishing `task` made, and whether it's still exactly as made (nothing edited, added or
+    ticked off), so undoing `task` can take it back."""
+    nxt = next((t for t in data["tasks"] if t.get("series") and t.get("series") == task.get("series")
+                and int(t.get("occurrence") or 1) == int(task.get("occurrence") or 1) + 1 and not is_done(t)), None)
+    if nxt is None or not nxt.get("made"):
+        return nxt, False
+    subtasks = [t for t in data["tasks"] if t.get("parent") == nxt["id"]]
+    same = dict(_as_made(nxt), subtasks=len(subtasks)) == nxt["made"] and not any(is_done(t) for t in subtasks)
+    return nxt, same
 
 
 def _done_today_in_series(hh, data: dict, task: dict, today: _dt.date) -> dict | None:
@@ -711,15 +762,21 @@ def cmd_undo(ctx, args) -> dict:
                 took = member["name"]
         task["stars_awarded"] = None
         task["star_to"] = None
+        # Ticking it off made the next one: that goes too (with its unread turn notice), unless it was changed.
+        nxt, untouched = _untouched_next(data, task)
+        if nxt and untouched:
+            gone = {nxt["id"]} | {t["id"] for t in data["tasks"] if t.get("parent") == nxt["id"]}
+            data["tasks"] = [t for t in data["tasks"] if t["id"] not in gone]
+            notices.withdraw(hh, nxt["id"])
         hh.touch("todos")
         hh.log("todo.undo", ctx.member["id"], task=task["id"])
-        later = [t for t in data["tasks"] if t.get("series") and t.get("series") == task.get("series")
-                 and t["id"] != task["id"] and not is_done(t)]  # fmt: skip
     summary = f"\"{task['title']}\" is open again."
     if took:
         summary += f" Took back {took}'s star."
-    if later:
-        summary += " The next one is still on the list; delete it if it isn't needed."
+    if nxt and untouched:
+        summary += " The next one it made is off the list again."
+    elif nxt:
+        summary += " The next one was changed since, so it's still on the list; delete it if it isn't needed."
     return {"summary": summary}
 
 
@@ -822,10 +879,11 @@ def cmd_delete(ctx, args) -> dict:
         gone = [t for t in data["tasks"] if t["id"] == task["id"] or t.get("parent") == task["id"]]
         ids = {t["id"] for t in gone}
         data["tasks"] = [t for t in data["tasks"] if t["id"] not in ids]
+        undo = trash.put(hh, "task", gone, ctx.member["id"])
         hh.touch("todos")
         hh.log("todo.delete", ctx.member["id"], task=task["id"], count=len(gone))
     extra = f" and its {plural(len(gone) - 1, 'subtask')}" if len(gone) > 1 else ""
-    return {"summary": f"Deleted \"{task['title']}\"{extra}."}
+    return {"summary": f"Deleted \"{task['title']}\"{extra}. {trash.kept_for(hh)}", "undo": undo}
 
 
 def cmd_photo(ctx, args) -> dict:
@@ -881,7 +939,7 @@ def cmd_show(ctx, args) -> dict:
         ctx.viewer.require_sees("todos")
     sections, lines = [], []
     for lst in lists:
-        tasks = [t for t in data["tasks"] if t["list"] == lst["id"]]
+        tasks = [t for t in kid_level(ctx, data)["tasks"] if t["list"] == lst["id"]]
         open_tasks, done, children = build_tree(tasks, hh.now())
         open_tasks = sort_open(_filter(hh, open_tasks, args, today))
         views = [task_view(hh, t, today, children.get(t["id"])) for t in open_tasks]
@@ -958,7 +1016,7 @@ def chore_chart(hh, data: dict, today: _dt.date, days: int = 7) -> list:
 def cmd_chores(ctx, args) -> dict:
     hh = ctx.household
     ctx.viewer.require_sees("todos")
-    data = hh.data("todos")
+    data = kid_level(ctx, hh.data("todos"))
     chart = chore_chart(hh, data, hh.today())
     if args.member:
         from .context import find_member

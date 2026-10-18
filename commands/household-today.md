@@ -1,6 +1,6 @@
 ---
 name: household-today
-description: Today at home in one glance - events, tasks due, tonight's dinner, lists to shop, birthdays, bills and anything new for you (Fridge Door).
+description: Today at home in one glance: events, tasks due, tonight's dinner, lists, birthdays, bills and news for you.
 argument-hint: "[tomorrow, or a kid's name]"
 ---
 

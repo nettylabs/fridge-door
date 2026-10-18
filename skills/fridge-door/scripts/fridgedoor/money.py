@@ -32,8 +32,9 @@ def unit(currency: str) -> Decimal:
 def to_decimal(value, field: str = "amount") -> Decimal:
     """Parse a number strictly: 1234.5, "1234.50", "$1234.50" or "1234.50 EUR".
 
-    Commas are refused. "1,500" is fifteen hundred in some countries and one and a half in others, and a
-    wrong guess on money is worse than a clear error the agent can fix.
+    Commas are refused unless they plainly group thousands before a dot ("1,234.56"). "1,500" on its own is fifteen
+    hundred in some countries and one and a half in others, and a wrong guess on money is worse than a clear error
+    the agent can fix.
     """
     if isinstance(value, bool) or value is None:
         raise ToolError(
@@ -48,6 +49,8 @@ def to_decimal(value, field: str = "amount") -> Decimal:
     text = str(value).strip().replace(" ", "").replace(" ", "")
     text = re.sub(r"^[^\d\-.]+", "", text)  # a currency symbol or code in front
     text = re.sub(r"[^\d.]+$", "", text)  # or after
+    if re.fullmatch(r"-?\d{1,3}(,\d{3})+\.\d+", text):
+        text = text.replace(",", "")
     if not _PLAIN_RE.match(text):
         raise ToolError(
             f"{field} {value!r} is not a plain number.",

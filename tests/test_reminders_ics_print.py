@@ -17,12 +17,14 @@ class RemindersTest(HomeTest):
     def setUp(self):
         super().setUp()
         self.setup_family("Ana, Luis, Theo (kid)", "CA")
+        for name in ("Ana", "Luis"):  # reminders are each adult's own yes
+            self.ok("member", "edit", name, "--reminders", "on", "--as", name)
 
     def due(self, now, *args):
         return self.ok("remind", "due", *args, env={"FRIDGE_NOW": now})
 
     def test_event_reminders_go_to_adults_once(self):
-        self.ok("who", "chat", "luis-dm", "--type", "direct", "--member", "Luis", "--owner-confirmed", "yes")
+        self.confirmed("who", "chat", "luis-dm", "--type", "direct", "--member", "Luis", words="yes")
         self.ok("cal", "add", "Dentist", "--date", "2026-10-20", "--time", "15:00", "--for", "Luis", "--remind", "1h")
         self.assertEqual(self.due("2026-10-20T13:30:00")["send"], [])  # not yet
         out = self.due("2026-10-20T14:05:00")
@@ -36,7 +38,7 @@ class RemindersTest(HomeTest):
         self.assertEqual([r["to"] for r in out["send"]], ["Ana"])
 
     def test_quiet_hours_hold_reminders_until_they_end(self):
-        self.ok("who", "chat", "luis-dm", "--type", "direct", "--member", "Luis", "--owner-confirmed", "yes")
+        self.confirmed("who", "chat", "luis-dm", "--type", "direct", "--member", "Luis", words="yes")
         self.ok("member", "edit", "Luis", "--quiet-hours", "21:00-07:00", "--as", "Luis")
         self.ok("cal", "add", "Early flight", "--date", "2026-10-21", "--time", "09:00", "--for", "Luis",
                 "--remind", "10h")  # fires 23:00 the night before  # fmt: skip
@@ -55,7 +57,7 @@ class RemindersTest(HomeTest):
     def test_private_events_and_bills_are_direct_chat_only(self):
         self.ok("who", "chat", "fam", "--type", "group", "--minors", "no")
         self.ok("who", "link", "fam", "--participant", "@ana", "--member", "Ana")
-        self.ok("who", "link", "fam", "--participant", "@luis", "--member", "Luis", "--owner-confirmed", "yes")
+        self.confirmed("who", "link", "fam", "--participant", "@luis", "--member", "Luis", words="yes")
         self.ok("cal", "add", "Therapy", "--date", "2026-10-20", "--time", "12:00", "--private", "--remind", "1h")
         self.ok("budget", "category-defaults")
         self.ok("budget", "bill-add", "Rent", "--amount", "1800", "--due", "2026-10-25", "--remind", "3d")
@@ -80,7 +82,7 @@ class RemindersTest(HomeTest):
 
     def test_outside_the_chat_needs_the_owners_ok(self):
         self.assertFalse(self.ok("remind", "due")["outside_chat_ok"])
-        self.ok("household", "settings", "--set", "reminders_outside_chat=yes", "--owner-confirmed", "yes, by email")
+        self.confirmed("household", "settings", "--set", "reminders_outside_chat=yes", words="yes, by email")
         self.assertTrue(self.ok("remind", "due")["outside_chat_ok"])
 
 

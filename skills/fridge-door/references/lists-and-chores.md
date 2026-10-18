@@ -7,6 +7,7 @@ Contents:
 - [To-dos](#to-dos)
 - [Chores, rotation and stars](#chores-rotation-and-stars)
 - [Notices when someone gets a task](#notices-when-someone-gets-a-task)
+- [The bin](#the-bin)
 
 ## Grocery and shopping lists
 
@@ -29,8 +30,10 @@ store. Kids may see the grocery list but not shopping lists, which is why there 
 | "New list for the warehouse club" | `fridge shop new --name "Warehouse run" --kind shopping --store "<store>"` |
 
 - Pass items the way people say them. An amount can come first or last ("2 pints of milk", "500g
-  mince", "bread x2"). Commas and "and" separate items ("eggs and bread" is two), while names that
-  belong together stay whole ("mac and cheese"). `--qty` and `--note` work for a single item.
+  mince", "bread x2"). Commas separate items. "and" splits two everyday grocery items ("eggs and
+  bread" is two), while names that belong together stay whole ("mac and cheese"), and so does
+  anything it doesn't know ("sandpaper and glue": add those as two items). `--qty` and `--note` work
+  for a single item.
 - Items already on the list aren't added twice: one with no amount takes the new amount, one with an
   amount keeps it (the summary says so), and a crossed-off one comes back. Use `--again` only when
   they really want a second line.
@@ -81,7 +84,8 @@ Moving house) get an emoji and colour: `fridge todo list-new --name Garden --ico
 | "Done with the gate" | `fridge todo done "Fix the gate"` |
 | "Wipe the mirror is part of cleaning the bathroom" | `fridge todo add "Wipe the mirror" --parent "Clean the bathroom"` |
 | "Move it to Monday" | `fridge todo edit "Fix the gate" --due monday` |
-| "That wasn't done after all" | `fridge todo undo "Fix the gate"` |
+| "That wasn't done after all" | `fridge todo undo "Fix the gate"` (a repeating chore's next one goes too, unless it was changed) |
+| "Delete the gate task" | `fridge todo delete "Fix the gate"` (it goes to [the bin](#the-bin)) |
 
 - Due dates take words ("today", "friday", "next week", "+3", "Nov 5") or a date written the
   household's way; the toolkit works out the real date with the household's week start.
@@ -114,6 +118,8 @@ fridge todo chores --member Theo
 - `--rotate` hands each new turn to the next person, in order. `todo chores` works the turns out
   ahead, day by day; chores nobody is on show under "Anyone". When someone leaves the household,
   their turn passes to the next person.
+- In a group chat with kids in it, to-dos are only chores: tasks a kid or teen is on (assigned or
+  taking turns), and repeating ones nobody is on. A parent's own chat still has everything.
 - `--by <who did it>` records who actually did it. A kid or teen gets a star; an adult just gets the
   credit. Ticking off the same chore twice by name is refused ("already done today"), so a second
   "Theo did the bins" doesn't skip someone's turn; the next turn's id is in the hint if they really
@@ -133,3 +139,19 @@ Assigning a task to another adult leaves them a notice, and so does a chore turn
 - Never message someone outside the chat about a task unless the owner says so for that message.
 - Kids and teens don't get notices: their chores show on the fridge sheet and in `fridge today --for
   <kid>` for a parent.
+
+## The bin
+
+Deleting a task (with its subtasks), event, note, recipe, expense, bill, savings goal or budget
+category puts it in the bin for the household's retention period (90 days unless the owner changes
+it). The reply says so and carries an `undo` command.
+
+- "What did I delete?" → `fridge bin show`: what this person may see, newest first, and until when.
+- "Bring back the dentist appointment" → `fridge bin restore Dentist` (add `--kind event` if two
+  things match; an expense goes by its id, such as X12). `--dry-run` previews it.
+- A restore puts things back with their links (a bill's paid mark, a category's bills). It refuses a
+  name that's been reused since (rename that one first), and says so when a task's list or an
+  expense's category is gone: the task goes to Household Tasks, the expense under Other.
+- Someone else's private event, note or personal task stays theirs in the bin, nothing from it shows
+  in a group chat with kids in it, and removing a member clears their private things from it.
+- Deleted lists have their own restore: `fridge shop restore` and `fridge todo list-restore`.

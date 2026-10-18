@@ -61,6 +61,8 @@ def needs_browser(strings) -> bool:
 
 
 def browser_pdf(html_text: str, pdf_path: Path, browser: str, landscape: bool = False) -> None:
+    if landscape:  # a browser prints the page the way its CSS asks: the fridge sheet is landscape
+        html_text = html_text.replace("</head>", "<style>@page { size: landscape; }</style></head>", 1)
     with tempfile.TemporaryDirectory(prefix="fridge-") as tmp:
         html_file = Path(tmp) / "page.html"
         html_file.write_text(html_text, encoding="utf-8")

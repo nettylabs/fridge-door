@@ -60,6 +60,8 @@ fractions.
 - **A recipe card to print:** `fridge print recipe Chili --servings 6`.
 - **Change it:** `recipe edit` (title, servings, times, `--add-ingredient`, `--set-ingredient
   "N=..."`, `--remove-ingredient N`, `--add-step`, tags, notes, photo).
+- **Delete it:** `recipe delete` puts it in the bin for the retention period (`fridge bin restore
+  <title>`; see [lists-and-chores.md](lists-and-chores.md#the-bin)).
 
 ## Recipe to grocery list
 

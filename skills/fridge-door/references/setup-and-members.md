@@ -12,32 +12,41 @@ Contents:
 ## First setup
 
 `fridge doctor` says whether the data folder has a household and what's missing. To set one up, ask
-at most three things, in one message if you can:
+these in one message:
 
 1. **Who lives there?** The person setting it up first. Kids and teens get "(kid)" or "(teen)", or
    an age in brackets, which only picks the role and isn't stored.
 2. **The country** (a code like CA or a name like Canada). It sets the currency, time zone, week
-   start, date and time format, units and paper size.
+   start, date and time format, units and paper size. For a country with several time zones
+   (Australia, Brazil, Canada, Chile, Spain, Indonesia, Mexico, Portugal, the US), also ask which
+   province, state or city, and pass its zone with `--timezone`. Without it, setup answers
+   `needs_timezone` and lists the main zones (`zones`): ask, then run it again.
 3. **A name for the household** (optional; the default is "<owner>'s home").
 
+Pass `--chat <this chat's id>` whenever your platform gives chats an id: it registers this
+one-to-one chat as the owner's (see "Chats" below).
+
 ```bash
-fridge setup --name "The Garcias" --members "Ana, Luis, Sofia (kid), Mateo (15)" --country MX
-fridge setup --members "Jo" --country GB                    # someone living alone
+fridge setup --name "The Garcias" --members "Ana, Luis, Sofia (kid), Mateo (15)" --country MX \
+  --timezone America/Mexico_City --chat <chat-id>
+fridge setup --members "Jo" --country GB                    # someone living alone, in a terminal
 fridge setup --name "Flat 4" --members "Kai, Jess, Sam" --country AU --timezone Australia/Perth
 ```
 
+On a computer with no time zone list (Python on Windows without the tzdata package), setup and every
+other command refuse with `no_tz_data`: the fix is `pip install tzdata`, once.
+
 - The first person is the owner unless someone is marked "(owner)". The owner must be an adult, and
   becomes the household's direct-chat speaker.
-- If the country has several time zones and the person is outside the main one, pass `--timezone`
-  (an IANA name such as America/Vancouver). Ask only if they mentioned a city or region.
 - Setup makes the shared "Household Tasks" and "Groceries" lists, a private "My Tasks" list for
   each adult, and the usual budget categories.
 - Afterwards, repeat the `summary`, then offer what's in `next`: the morning Today summary,
   registering a group chat if the household uses one with you, and registering each other adult's
   own one-to-one chat (below).
 
-To try things out first, use the demo in its own folder: `fridge --home /tmp/fridge-door-demo demo
---region GB`. The regions are CA (a family of five), GB (a couple), AU (three flatmates) and US (a
+To try things out first, use the demo in its own folder (it refuses without `--home`):
+`fridge --home /tmp/fridge-door-demo demo --region GB` (add `--timezone <their zone>` so its day
+matches theirs). The regions are CA (a family of five), GB (a couple), AU (three flatmates) and US (a
 single parent with two kids).
 
 ## Settings
@@ -54,8 +63,8 @@ more):
 | `currency_display` | `auto` (the code when a symbol like $ is shared), `always` or `never` |
 | `quiet_hours` | the household default, e.g. `22:00-07:00` |
 | `retention_days` | how long finished chores, deleted lists and the activity log are kept (default 90) |
-| `sensitive_notes_in_groups` | `yes` needs the owner's own words (`ask_owner`) |
-| `reminders_outside_chat` | `yes` needs the owner's own words (`ask_owner`) |
+| `sensitive_notes_in_groups` | `yes` needs the owner's clear yes (`ask_owner`, then `--owner-confirmed` and `--confirm`), one setting at a time |
+| `reminders_outside_chat` | `yes` needs the owner's clear yes, the same way |
 
 ## Members, roles and access
 
@@ -73,15 +82,17 @@ them:
 ```bash
 fridge member access Mateo                      # show
 fridge member access Luis --set budget=view     # one module
-fridge member access Mateo --role adult         # a new role resets access to that role's preset
+fridge member access Mateo --role adult         # a new role resets access; making a teen an adult asks 18+ first
 fridge member access Luis --reset
 ```
 
 - `member add --name ... --role ...` (owner) adds someone. Colours come from a palette unless
   `--color` picks one.
-- `member edit` changes a name, colour, quiet hours (`"22:30-06:30"`, `none` or `default`) or the
-  Today sections (`events,tasks,dinner,lists,birthdays,bills,notices` or `all`). Members may edit
-  themselves; the owner may edit anyone.
+- `member edit` changes a name, colour, quiet hours (`"22:30-06:30"`, `none` or `default`), the
+  Today sections (`events,tasks,dinner,lists,birthdays,bills,notices` or `all`) or reminders
+  (`--reminders on|off`). Members may edit themselves; the owner may edit anyone, except that only
+  an adult can turn their own reminders on (they're opt-in: see
+  [today-reminders-printables.md](today-reminders-printables.md)).
 - When the toolkit refuses with `not_authorized`, say who can do it (the `hint` says), and don't
   look for a way around it.
 
@@ -107,8 +118,12 @@ Fridge Door is made for the adults of a household. Kids and teens take part thro
 
 ## Chats: who's talking and who's watching
 
-In a one-to-one chat with the owner nothing needs setting up: they're the direct-chat speaker
-(`fridge who speaker <name>` changes it). Everything else is registered once by the owner.
+**The owner's own one-to-one chat** is registered at setup (`setup --chat <chat-id>`) or later
+(`fridge who chat <chat-id> --type direct`). From then on every message must say which chat it came
+from, and a chat nobody registered is refused (`which_chat`, `chat_not_linked`), so no other chat
+can act as the owner. Only on a platform without chat ids (a terminal) do commands run without
+`--chat`, as the household's direct-chat speaker (`fridge who speaker <name>` changes who that is).
+Everything else is registered once by the owner.
 
 **A group chat** (a family or flat chat the agent is part of):
 
@@ -116,9 +131,11 @@ In a one-to-one chat with the owner nothing needs setting up: they're the direct
    calls that conversation; use the same one every time. If you don't know whether anyone under 18
    is in it, the toolkit asks the owner (`ask_owner`).
 2. Link each adult once: `fridge who link <chat-id> --participant <their handle> --member <name>`.
-   The first link of each person asks the owner to confirm they're 18 or older; pass the owner's
-   words with `--owner-confirmed` only if they said yes (an answer that reads as a no, or says
-   they're under 18, is refused). A kid's or teen's handle is noted instead of linked (above).
+   The first link of each person asks the owner "Is <name> 18 or older?". Only if they clearly say
+   yes, run it again with their exact words in `--owner-confirmed` and the `confirm` code in
+   `--confirm`. An answer that says or suggests they're under 18 (an age, "teen", a school grade,
+   "almost 18") is refused, and so is anything short of a clear yes. A kid's or teen's handle is
+   noted instead of linked (above).
 3. From then on, every command from that chat carries `--chat <chat-id> --from <handle>`.
    `--as` is refused in group chats, so nobody can act as someone else.
 
@@ -143,22 +160,26 @@ says who a message runs as and who will see the reply. Use it whenever you're un
 
 ## More than one household
 
-Someone can belong to several households (their own home and a parent's, for example).
-`fridge household add --name "Grandma's" --members "Ana (owner), Grandma Rosa" --country PT` adds one
-and makes it active; `household list` and `household switch <name>` move between them, and
-`--household <name>` runs one command in another household. A registered chat always belongs to one
-household.
+Someone can belong to several households (their own home and a parent's, for example). Only the
+owner adds one, listing themselves as its owner, so their direct chat stays theirs:
+`fridge household add --name "Grandma's" --members "Ana (owner), Grandma Rosa" --country PT
+--timezone Europe/Lisbon` adds one and makes it active. `household list` (direct chat) shows them;
+`household switch <name>` (the owner) moves between them, but only to a household where direct
+chats are them too; `--household <name>` runs one command in another household. A registered chat
+always belongs to one household.
 
 ## Removing, exporting and deleting
 
 - **Removing a member** (`member remove <name>`) erases their profile, stars, personal list,
-  private events, notes and printouts, and their chat links, and takes them off shared tasks and
-  events. If it was their turn on a chore, it passes to the next person (the `changes` say which).
-  It asks the owner first (`ask_owner`); pass the owner's exact words with `--owner-confirmed` only
-  if they said yes. Old records show "Former member".
+  private events, notes and printouts (in the bin too), and their chat links, and takes them off
+  shared tasks and events. If it was their turn on a chore, it passes to the next person (the `changes` say which).
+  It asks the owner first (`ask_owner`); only if they clearly say yes, run it again with their exact
+  words in `--owner-confirmed` and the `confirm` code in `--confirm`. Old records show "Former
+  member".
 - **Export** (`fridge export`, owner, direct chat) zips the household's data into its exports
   folder. Other members' private events, notes, personal lists and notices stay out of it, as they
   do everywhere else. Offer it before big changes.
 - **Deleting the household** (`household delete`, owner, direct chat) erases everything after the
-  owner's own confirmation. It can't be undone; suggest an export first.
-- Finished chores, deleted lists and the activity log clear themselves after `retention_days`.
+  owner's clear yes, given the same way. It can't be undone; suggest an export first.
+- Finished chores, deleted lists, the bin (deleted tasks, events, notes, recipes and budget items)
+  and the activity log clear themselves after `retention_days`.

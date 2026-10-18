@@ -14,7 +14,7 @@ import datetime as _dt
 import re
 from fractions import Fraction
 
-from . import importer, ingredients, shopping, units
+from . import importer, ingredients, shopping, trash, units
 from .seed_aisles import item_key
 from .util import ToolError, clean_text, fold, load_spec, match_one, now_stamp, parse_stamp, plural, servings_arg
 
@@ -69,7 +69,6 @@ def build_recipe(hh, spec: dict, created_by: str, source: str = "manual") -> dic
         "steps": steps,
         "tags": tags,
         "photo": spec.get("photo"),
-        "image_url": spec.get("image_url"),
         "source_url": spec.get("source_url"),
         "source": source,
         "notes": clean_text(spec.get("notes"), "notes", max_len=2000, required=False),
@@ -531,9 +530,10 @@ def cmd_delete(ctx, args) -> dict:
         data["recipes"] = [r for r in data["recipes"] if r["id"] != recipe["id"]]
         data.setdefault("cooking", {})
         data["cooking"] = {m: c for m, c in data["cooking"].items() if c.get("recipe") != recipe["id"]}
+        undo = trash.put(hh, "recipe", [recipe], ctx.member["id"])
         hh.touch("recipes")
         hh.log("recipe.delete", ctx.member["id"], recipe=recipe["id"])
-    return {"summary": f"Deleted {recipe['title']}."}
+    return {"summary": f"Deleted {recipe['title']}. {trash.kept_for(hh)}", "undo": undo}
 
 
 def _grocery_list(ctx, shop: dict, query) -> dict:

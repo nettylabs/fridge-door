@@ -526,7 +526,8 @@ def cmd_export(ctx, args) -> dict:
         member_id = find_member(hh, args.who)["id"]
     text, count = export(ctx, member_id)
     name = re.sub(r"[^A-Za-z0-9_-]+", "-", args.file or f"{hh.name}-calendar").strip("-").lower() or "calendar"
-    path = hh.output_dir() / (name if name.endswith(".ics") else f"{name}.ics")
+    folder = hh.output_for(ctx.member["id"], ctx.chat_id if ctx.viewer.group else None)  # whose it is
+    path = folder / (name if name.endswith(".ics") else f"{name}.ics")
     path.write_bytes(text.encode("utf-8"))  # keep the CRLF line ends calendars expect
     return {"file": str(path), "events": count,
             "summary": f"Saved {plural(count, 'event')} to {path.name}. Open it with Google, Apple or Outlook Calendar "

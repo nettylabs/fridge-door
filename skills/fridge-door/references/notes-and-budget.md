@@ -39,10 +39,13 @@ Contents:
   chat.
 - Suggest `--sensitive` whenever a note holds a code, password or account detail. Don't keep
   passwords for online accounts; suggest a password manager for those.
-- Never write a child's details (school, health, surname, location) into a note. If a shared note
-  names a kid next to health words (an allergy, an inhaler), the result has a `hint` to mark it
-  sensitive: offer that, since the sitter's notes may need the allergy, but groups and the fridge
-  sheet don't.
+- Never write a child's surname or location into a note. A shared note that names a kid or teen
+  next to health or school details (an allergy, an inhaler, "Maple Elementary") is refused with
+  `child_details`: save it with `--sensitive` (adults see it in their own chats, so the sitter's
+  notes can still hold the allergy) or `--private`. The same check runs on `note edit`, so add
+  `--sensitive` in the same command.
+- `note delete` puts a note in the bin for the retention period (`fridge bin restore <title>`; see
+  [lists-and-chores.md](lists-and-chores.md#the-bin)).
 
 ## The budget: who and how
 
@@ -68,13 +71,18 @@ fridge budget category-add "Pets" --monthly 120 --icon 🐾
 fridge budget category-delete Fun --move-to Other      # a category in use needs --move-to
 ```
 
+Deleting an expense, bill, savings goal or category puts it in the bin for the retention period
+(`fridge bin restore <name>`, or an expense's id; see [lists-and-chores.md](lists-and-chores.md#the-bin)).
+It comes back with its links: a restored expense marks its bill paid again, and a restored category
+gets its bills back (expenses moved with `--move-to` stay where they went).
+
 ## Spending and receipts
 
 ```bash
 fridge budget spend 54.20 --category Groceries
 fridge budget spend 38 --category "Eating out" --by Luis --note "Pizza night"
 fridge budget expenses --month 2026-09 --category Groceries
-fridge budget expense-edit X4 --amount 45.10              # or expense-delete X4; both take --dry-run
+fridge budget expense-edit X4 --amount 45.10              # or expense-delete X4 (both take --dry-run)
 ```
 
 `--date` leans to the past, since spending has already happened: "friday" means the Friday just

@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from . import access
+from . import access, trash
 from .util import ToolError, clean_text, fold, match_one, now_stamp, plural
 
 BODY_MAX = 10000
@@ -81,17 +81,27 @@ _HEALTH = re.compile(r"allerg|epi-?pen|asthma|inhaler|medic|diagnos|diabet|insul
                      r"autis|prescription|eczema|condition|therap")
 
 
-def _health_hint(hh, note: dict) -> str | None:
-    """A shared note that names a kid or teen next to health words: suggest keeping it out of groups and print."""
+_SCHOOL = re.compile(r"\b(?:school|elementary|kindergarten|daycare|day care|preschool|nursery school|homeroom|"
+                     r"grade \d+|year \d+)\b")
+
+
+def check_child_details(hh, note: dict) -> None:
+    """A child's health or school details stay out of group chats and off the fridge sheet: a shared note that names
+    a kid or teen next to them must be sensitive (or private). The sitter's notes can still hold the allergy."""
     if note.get("sensitive") or note.get("visibility") == "private":
-        return None
+        return
     text = fold(" ".join([note["title"], note.get("body") or ""] + [c["text"] for c in note.get("checklist", [])]))
     kids = [m["name"] for m in hh.members
             if access.is_minor(m) and re.search(rf"\b{re.escape(fold(m['name']))}\b", text)]  # fmt: skip
-    if kids and _HEALTH.search(text):
-        return (f"This mentions {kids[0]}'s health. Mark it sensitive to keep it out of group chats and off the fridge "
-                f"sheet: fridge note edit \"{note['title']}\" --sensitive")
-    return None
+    what = "health" if _HEALTH.search(text) else "school" if _SCHOOL.search(text) else None
+    if kids and what:
+        raise ToolError(
+            f"This note names {kids[0]} next to {what} details, so it can't be a plain shared note: a child's details "
+            "stay out of group chats and off the fridge sheet.",
+            hint="Save it with --sensitive (adults see it in their own chats) or --private (only you), or leave "
+            f"{kids[0]}'s details out.",
+            code="child_details",
+        )
 
 
 def _can_change(ctx, note: dict) -> None:
@@ -149,6 +159,7 @@ def cmd_add(ctx, args) -> dict:
         }
         if args.body and len(args.body) > BODY_MAX:
             raise ToolError("That note is too long.", code="too_long")
+        check_child_details(hh, note)
         data["notes"].append(note)
         hh.touch("notes")
         hh.log("note.add", ctx.member["id"], note=note["id"])
@@ -156,9 +167,6 @@ def cmd_add(ctx, args) -> dict:
     extra = " It's marked sensitive: shown only in direct chats." if note["sensitive"] else ""
     out = {"note": note_view(hh, note), "dry_run": args.dry_run,
            "summary": f"{'Would save' if args.dry_run else 'Saved'} the {kind} \"{note['title']}\".{extra}"}  # fmt: skip
-    hint = _health_hint(hh, note)
-    if hint:
-        out["hint"] = hint
     return out
 
 
@@ -244,15 +252,13 @@ def cmd_edit(ctx, args) -> dict:
             changed.append("photos")
         if not changed:
             raise ToolError("Nothing to change.", hint="See: fridge note edit --help", code="usage")
+        check_child_details(hh, note)
         note["updated_at"] = now_stamp()
         hh.touch("notes")
         hh.log("note.edit", ctx.member["id"], note=note["id"], fields=sorted(set(changed)))
     verb = "Would update" if args.dry_run else "Updated"
     out = {"note": note_view(hh, note), "dry_run": args.dry_run,
            "summary": f"{verb} \"{note['title']}\": {', '.join(sorted(set(changed)))}."}  # fmt: skip
-    hint = _health_hint(hh, note)
-    if hint:
-        out["hint"] = hint
     return out
 
 
@@ -289,9 +295,10 @@ def cmd_delete(ctx, args) -> dict:
         note = find_note(ctx, data, args.note)
         _can_change(ctx, note)
         data["notes"] = [n for n in data["notes"] if n["id"] != note["id"]]
+        undo = trash.put(hh, "note", [note], ctx.member["id"])
         hh.touch("notes")
         hh.log("note.delete", ctx.member["id"], note=note["id"])
-    return {"summary": f"Deleted \"{note['title']}\"."}
+    return {"summary": f"Deleted \"{note['title']}\". {trash.kept_for(hh)}", "undo": undo}
 
 
 def forget_member(hh, member_id: str) -> list:
@@ -300,9 +307,14 @@ def forget_member(hh, member_id: str) -> list:
     data["notes"] = [
         n for n in data["notes"] if not (n.get("visibility") == "private" and n.get("author") == member_id)
     ]
-    for note in data["notes"]:
+    def scrub(note: dict) -> None:
         if note.get("author") == member_id:
             note["author"] = None
+
+    for note in data["notes"]:
+        scrub(note)
+    trash.forget(hh, "notes", member_id, lambda n: n.get("visibility") == "private" and n.get("author") == member_id,
+                 scrub)  # fmt: skip
     hh.touch("notes")
     gone = before - len(data["notes"])
     return [f"deleted {plural(gone, 'private note')}"] if gone else []

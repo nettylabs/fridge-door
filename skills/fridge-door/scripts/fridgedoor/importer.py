@@ -116,14 +116,6 @@ def _tags(node) -> list:
     return tags[:12]
 
 
-def _image(value):
-    if isinstance(value, list):
-        value = value[0] if value else None
-    if isinstance(value, dict):
-        value = value.get("url") or value.get("contentUrl")
-    return clean(value) or None
-
-
 def from_html(text: str, url: str | None = None) -> dict:
     """The first schema.org Recipe in a page, as plain fields. Raises no_recipe_data when there isn't one."""
     found: list = []
@@ -161,7 +153,6 @@ def from_html(text: str, url: str | None = None) -> dict:
         "ingredients": lines,
         "steps": _steps(node.get("recipeInstructions")),
         "tags": _tags(node),
-        "image_url": _image(node.get("image")),
         "source_url": clean(node.get("url")) or url,
         "description": clean(node.get("description"))[:500] or None,
     }

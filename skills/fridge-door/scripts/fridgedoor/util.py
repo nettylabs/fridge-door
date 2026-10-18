@@ -156,16 +156,39 @@ def load_spec(value: str):
 # --------------------------------------------------------------------------- time
 
 
+NO_TZ_DATA_HINT = ("Install it once with: pip install tzdata (Python on Windows doesn't come with one; Macs and Linux "
+                   "do). Without it, dates, reminders and quiet hours would be hours off, so nothing runs.")
+
+
+def tz_database_ok() -> bool:
+    """Whether this computer has a time zone database at all (Python on Windows has none without tzdata)."""
+    try:
+        from zoneinfo import ZoneInfo
+
+        ZoneInfo("Europe/London")
+        return True
+    except Exception:
+        return False
+
+
+def no_tz_data() -> ToolError:
+    return ToolError("This computer has no time zone list, so Fridge Door can't tell the household's time.",
+                     hint=NO_TZ_DATA_HINT, code="no_tz_data")  # fmt: skip
+
+
 def get_tz(name: str | None):
-    """A tzinfo for an IANA name such as "Europe/London". Falls back to UTC if the time zone database is missing."""
+    """A tzinfo for an IANA name such as "Europe/London". On a computer with no time zone database it refuses
+    (no_tz_data) rather than quietly running every household on UTC."""
     if not name or name.upper() == "UTC":
         return _dt.timezone.utc
     try:
         from zoneinfo import ZoneInfo
 
         return ZoneInfo(name)
-    except Exception:  # unknown name, or a computer without the time zone database
-        return _dt.timezone.utc
+    except Exception:
+        if not tz_database_ok():
+            raise no_tz_data() from None
+        return _dt.timezone.utc  # an unknown name: setup and settings never store one
 
 
 def tz_known(name: str) -> bool:
@@ -488,27 +511,6 @@ def match_one(items: list, query, what: str, *, key="name", hint: str | None = N
         candidates=[dict({"id": item.get("id"), key: item.get(key)}, **({"label": label(item)} if label else {}))
                     for item in pool[:10]],  # fmt: skip
     )
-
-
-# --------------------------------------------------------------------------- the owner's own words
-
-_DECLINED = re.compile(
-    r"^\W*(no|nope|nah|naw|not|don'?t|do not|never|cancel|stop|wait|hold on|hang on|negative|non|nein|nee|nej|nei|"
-    r"nao|nie|ne)\b"
-)
-
-
-def owner_words(value) -> str | None:
-    """The owner's own words for an ask_owner question (None when not given). A reply that reads as a no is
-    refused, so a refusal passed along by mistake never switches anything on."""
-    text = clean_text(value, "owner's answer", max_len=500, required=False)
-    if text and _DECLINED.search(fold(text)):
-        raise ToolError(
-            "The owner's answer reads as a no, so nothing was changed.",
-            hint="Pass --owner-confirmed only when the owner said yes. Tell them it wasn't done.",
-            code="owner_declined",
-        )
-    return text
 
 
 def servings_arg(value) -> int:

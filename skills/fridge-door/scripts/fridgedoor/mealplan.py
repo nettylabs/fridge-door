@@ -447,12 +447,13 @@ def ideas(ctx, args) -> dict:
             reasons.append(f"you have {len(have)} of {len(measurable)} ingredients")
         if quick:
             reasons.append(f"quick ({recipe['total_min']} min)")
+        planned = recipe["id"] in recent
         if last:
             reasons.append(f"last cooked {days_since} days ago")
-        elif not cooked:
+        elif not planned:
             reasons.append("not cooked yet")
-        if recipe["id"] in recent:
-            reasons.append("already planned or cooked recently")
+        if planned:
+            reasons.append("already planned or cooked recently" if last else "already planned")
         scored.append((score, recipe, reasons))
     scored.sort(key=lambda s: (-s[0], fold(s[1]["title"])))
     top = [{"recipe": r["id"], "title": r["title"], "why": ", ".join(why)} for _, r, why in scored[:5]]

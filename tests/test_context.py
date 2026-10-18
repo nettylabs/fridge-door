@@ -34,7 +34,7 @@ class WhoTest(HomeTest):
         out = self.err("needs_owner", "who", "link", "family", "--participant", "@luis", "--member", "Luis")
         self.assertIn("18 or older", out["ask_owner"])
         self.ok("who", "link", "family", "--participant", "@luis", "--member", "Luis",
-                "--owner-confirmed", "yes, he's my husband")  # fmt: skip
+                "--owner-confirmed", "yes, he's my husband", "--confirm", out["confirm"])  # fmt: skip
         self.ok("who", "link", "family", "--participant", "@ana", "--member", "Ana")  # the owner needs no check
         self.ok("who", "chat", "luis-dm", "--type", "direct", "--member", "Luis")
         self.ok("who", "chat", "garden", "--type", "group", "--minors", "no")
@@ -64,22 +64,23 @@ class WhoTest(HomeTest):
 
     def test_group_audience_includes_every_linked_adult_and_a_child_stand_in(self):
         self.ok("who", "link", "family", "--participant", "@ana", "--member", "Ana")
-        self.ok("who", "link", "family", "--participant", "@luis", "--member", "Luis", "--owner-confirmed", "yes")
+        self.confirmed("who", "link", "family", "--participant", "@luis", "--member", "Luis", words="yes")
         out = self.ok("who", "am-i", "--chat", "family", "--from", "@luis")
         self.assertEqual(out["member"]["name"], "Luis")
         self.assertEqual(out["audience"], ["Luis", "Ana", "a child"])
         self.assertTrue(out["minors_present"])
 
     def test_as_is_refused_in_group_chats(self):
-        self.ok("who", "link", "family", "--participant", "@luis", "--member", "Luis", "--owner-confirmed", "yes")
+        self.confirmed("who", "link", "family", "--participant", "@luis", "--member", "Luis", words="yes")
         self.err("use_from_in_groups", "who", "am-i", "--chat", "family", "--from", "@luis", "--as", "Ana")
         self.ok("who", "chat", "ana-dm", "--type", "direct")
         self.assertEqual(self.ok("who", "am-i", "--chat", "ana-dm")["member"]["name"], "Ana")
 
     def test_a_participant_handle_maps_to_one_member(self):
         self.ok("who", "link", "family", "--participant", "@ana", "--member", "Ana")
+        asked = self.err("needs_owner", "who", "link", "family", "--participant", "@ana", "--member", "Luis")
         self.err("already_linked", "who", "link", "family", "--participant", "@ana", "--member", "Luis",
-                 "--owner-confirmed", "yes")  # fmt: skip
+                 "--owner-confirmed", "yes", "--confirm", asked["confirm"])  # fmt: skip
 
     def test_a_chat_belongs_to_one_household(self):
         self.ok("household", "add", "--name", "Other", "--members", "Ana", "--country", "GB")
@@ -90,21 +91,21 @@ class WhoTest(HomeTest):
         self.assertEqual(out["household"]["name"], "Test home")
 
     def test_becoming_a_teen_unlinks_chats(self):
-        self.ok("who", "link", "family", "--participant", "@luis", "--member", "Luis", "--owner-confirmed", "yes")
+        self.confirmed("who", "link", "family", "--participant", "@luis", "--member", "Luis", words="yes")
         out = self.ok("member", "access", "Luis", "--role", "teen")
         self.assertEqual(out["unlinked_chats"], ["family"])
         self.err("unknown_participant", "who", "am-i", "--chat", "family", "--from", "@luis")
 
     def test_a_removed_members_direct_chat_is_deleted_not_handed_to_the_owner(self):
-        self.ok("who", "chat", "luis-dm", "--type", "direct", "--member", "Luis", "--owner-confirmed", "yes")
+        self.confirmed("who", "chat", "luis-dm", "--type", "direct", "--member", "Luis", words="yes")
         self.assertEqual(self.ok("who", "am-i", "--chat", "luis-dm")["member"]["name"], "Luis")
-        out = self.ok("member", "remove", "Luis", "--owner-confirmed", "yes")
+        out = self.confirmed("member", "remove", "Luis", words="yes")
         self.assertIn("deleted their direct chat luis-dm", out["changes"])
         self.err("chat_not_linked", "who", "am-i", "--chat", "luis-dm")  # never falls back to Ana
         self.assertNotIn("luis-dm", Hub(self.home).data["chats"])
 
     def test_becoming_a_teen_deletes_their_direct_chat(self):
-        self.ok("who", "chat", "luis-dm", "--type", "direct", "--member", "Luis", "--owner-confirmed", "yes")
+        self.confirmed("who", "chat", "luis-dm", "--type", "direct", "--member", "Luis", words="yes")
         out = self.ok("member", "access", "Luis", "--role", "teen")
         self.assertEqual(out["deleted_chats"], ["luis-dm"])
         self.err("chat_not_linked", "who", "am-i", "--chat", "luis-dm")
@@ -119,20 +120,20 @@ class WhoTest(HomeTest):
         self.err("chat_not_linked", "who", "am-i", "--chat", "odd-dm")
 
     def test_removing_the_speaker_leaves_nobody_speaking_until_the_owner_says(self):
-        self.ok("who", "speaker", "Luis", "--owner-confirmed", "yes, Luis is my partner")
-        self.ok("member", "remove", "Luis", "--owner-confirmed", "yes", "--as", "Ana")
+        self.confirmed("who", "speaker", "Luis", words="yes, Luis is my partner")
+        self.confirmed("member", "remove", "Luis", "--as", "Ana", words="yes")
         self.err("who_is_talking", "who", "am-i")  # not quietly the owner
         self.ok("who", "speaker", "Ana", "--as", "Ana")
         self.assertEqual(self.ok("who", "am-i")["member"]["name"], "Ana")
 
     def test_removing_a_member_unlinks_them(self):
-        self.ok("who", "link", "family", "--participant", "@luis", "--member", "Luis", "--owner-confirmed", "yes")
-        out = self.ok("member", "remove", "Luis", "--owner-confirmed", "yes")
+        self.confirmed("who", "link", "family", "--participant", "@luis", "--member", "Luis", words="yes")
+        out = self.confirmed("member", "remove", "Luis", words="yes")
         self.assertIn("unlinked from family", out["changes"])
 
     def test_speaker_and_forget_chat(self):
         self.err("needs_owner", "who", "speaker", "Luis")  # an adult who hasn't been confirmed 18+ yet
-        self.ok("who", "speaker", "Luis", "--owner-confirmed", "yes")
+        self.confirmed("who", "speaker", "Luis", words="yes")
         self.assertEqual(self.ok("who", "am-i")["member"]["name"], "Luis")
         self.err("not_authorized", "who", "speaker", "Ana")  # Luis is talking now, and isn't the owner
         self.ok("who", "speaker", "Ana", "--as", "Ana")

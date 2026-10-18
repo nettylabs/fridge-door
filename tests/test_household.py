@@ -64,9 +64,9 @@ class SetupTest(HomeTest):
         self.assertIn("Sofia and Mateo take part through you", out["summary"])
         names = sorted(lst["name"] for lst in out["lists"])
         self.assertEqual(names, ["Groceries", "Household Tasks", "My Tasks (Ana)", "My Tasks (Luis)"])  # per adult
-        self.assertTrue(any("several time zones" in note for note in out["notes"]))
+        self.assertEqual(out["settings"]["timezone"], "America/Toronto")
         out = self.ok("household", "add", "--name", "Gran's", "--members", "Ana (owner), Rosa, Theo (kid)", "--country",
-                      "PT")  # fmt: skip
+                      "PT", "--timezone", "Europe/Lisbon")  # fmt: skip
         self.assertIn("Theo takes part through you", out["summary"])
 
     def test_solo_setup_needs_only_a_name_and_country(self):
@@ -123,7 +123,8 @@ class HouseholdTest(HomeTest):
 
     def test_add_list_and_switch_households(self):
         out = self.ok(
-            "household", "add", "--name", "Grandma's", "--members", "Ana (owner), Rosa, Leo", "--country", "PT"
+            "household", "add", "--name", "Grandma's", "--members", "Ana (owner), Rosa, Leo", "--country", "PT",
+            "--timezone", "Atlantic/Azores",
         )
         self.assertIn("now the active household", out["summary"])
         listing = self.ok("household", "list")["households"]
@@ -137,14 +138,15 @@ class HouseholdTest(HomeTest):
         self.assertEqual(out["members"][2]["name"], "Leo")
 
     def test_households_keep_separate_data(self):
-        self.ok("household", "add", "--name", "Second", "--members", "Bo", "--country", "NZ")
+        self.ok("household", "add", "--name", "Second", "--members", "Ana (owner), Bo", "--country", "NZ")
         first, second = (Hub(self.home).household(h) for h in ("Test home", "Second"))
         self.assertNotEqual(first.path, second.path)
         self.assertEqual(second.settings["currency"], "NZD")
         self.assertEqual(len(first.members), 4)
 
     def test_duplicate_household_names_are_refused(self):
-        self.err("exists", "household", "add", "--name", "Test home", "--members", "Bo", "--country", "GB")
+        self.err("exists", "household", "add", "--name", "Test home", "--members", "Ana (owner), Bo", "--country",
+                 "GB")  # fmt: skip
 
     def test_rename_and_settings_are_owner_only(self):
         self.err("not_authorized", "household", "rename", "--to", "Ours", "--as", "Luis")
@@ -164,14 +166,14 @@ class HouseholdTest(HomeTest):
     def test_reminders_outside_the_chat_need_the_owners_words(self):
         out = self.err("needs_owner", "household", "settings", "--set", "reminders_outside_chat=yes")
         self.assertIn("outside this chat", out["ask_owner"])
-        out = self.ok("household", "settings", "--set", "reminders_outside_chat=yes", "--owner-confirmed", "yes, email")
+        out = self.confirmed("household", "settings", "--set", "reminders_outside_chat=yes", words="yes, email")
         self.assertEqual(out["settings"]["reminders_outside_chat"]["owner_said"], "yes, email")
 
     def test_delete_needs_the_owners_words(self):
         out = self.err("needs_owner", "household", "delete")
         self.assertIn("can't be undone", out["ask_owner"])
         self.err("not_authorized", "household", "delete", "--owner-confirmed", "yes", "--as", "Luis")
-        self.ok("household", "delete", "--owner-confirmed", "yes, delete it")
+        self.confirmed("household", "delete", words="yes, delete it")
         self.assertFalse(Hub(self.home).exists())
 
     def test_export_zips_the_household(self):

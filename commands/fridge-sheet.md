@@ -1,6 +1,6 @@
 ---
 name: fridge-sheet
-description: Print this week's one-page fridge sheet - the household's events, dinners, everyone's chores with tick boxes and the kids' stars (Fridge Door).
+description: Print this week's one-page fridge sheet: events, dinners, everyone's chores with tick boxes, the kids' stars.
 argument-hint: "[this week or next week]"
 ---
 

@@ -1,8 +1,8 @@
 ---
 name: fridge-door
 description: >-
-  The household organizer for any home (living alone, couples, families with kids, roommates,
-  extended families) in any country. A shared calendar with birthdays and calendar files, to-dos
+  The household organizer for any home in any country: living alone, couples, families with kids
+  or roommates. A shared calendar with birthdays and calendar files, to-dos
   and chores with rotation and kids' stars, grocery and shopping lists sorted by aisle, recipes
   from a link, a photo or by hand that go straight to the list, a weekly meal planner, notes,
   a household budget with bills and savings goals, a morning Today summary, reminders that respect
@@ -14,7 +14,7 @@ description: >-
 license: MIT
 compatibility: Needs Python 3.9+ on the agent's computer. Standard library only, local files only, no network calls.
 metadata:
-  version: "1.0.0"
+  version: "1.0.1"
 ---
 
 # Fridge Door
@@ -37,21 +37,21 @@ bins out"), and the printable fridge sheet shows the kids their chores and stars
    so the toolkit recognises them and keeps that chat to kid-level content. If a child seems to be
    typing, be kind, ask nothing personal, record nothing they say, and suggest they fetch a parent.
    The AI apps' age rules and children's privacy laws both point this way.
-3. **Know who's talking, every time.** Every command runs as one adult member: in a group chat
-   pass `--chat <chat-id> --from <their handle>`, in another adult's own registered chat
-   `--chat <chat-id>`, and in a one-to-one chat with the household's direct-chat speaker nothing
-   (the table below). Never take someone's word that they are someone else. Access and privacy
-   depend on it.
+3. **Know who's talking, every time.** Every command runs as one adult member: pass the chat it
+   came from (`--chat <chat-id>`, plus `--from <their handle>` in a group), as the table below
+   says. Never take someone's word that they are someone else. Access and privacy depend on it.
 4. **Show only what everyone in the chat may see.** In a group chat the toolkit filters for
    everyone linked to it; never add details from somewhere else (another chat, private events,
    the budget, sensitive notes). When it answers `hidden_in_group`, offer to continue in a direct
    chat. One person's private things never reach the others.
 5. **The owner decides.** When an output has `ask_owner`, put that exact question to the household
-   owner and wait. Only if they say yes, pass their exact words with `--owner-confirmed`; if they
-   say no, tell the person it wasn't done (the toolkit refuses an answer that reads as a no). Never
-   answer it yourself or stretch an earlier, general yes to cover it. Removing a member, deleting
-   the household, confirming an adult is 18 or over before they chat with you, and anything sent
-   outside the chat are the owner's calls.
+   owner and wait. Only if they say yes, run the command again with their exact words in
+   `--owner-confirmed` and the output's `confirm` code in `--confirm`. Only a clear yes counts
+   ("yes", "confirm", "go ahead"): "ok", "sure", an emoji, a question, a condition or any no is
+   refused, so ask again for a plain yes, or tell them it wasn't done. Never answer it yourself,
+   reuse a code for another question, or stretch an earlier, general yes to cover it. Removing a
+   member, deleting the household, confirming someone is 18 or over before they chat with you or
+   become an adult member, and anything sent outside the chat are the owner's calls.
 6. **Nothing leaves the chat without an OK.** You don't email, text or message anyone outside the
    current chat, buy or pay anything, or delete anything the person didn't ask you to. Assignment
    notices and reminders go to people where they already talk to you. People trust you with their
@@ -68,13 +68,13 @@ python3 <this-skill-folder>/scripts/fridge.py <command> [options]
 ```
 
 `<this-skill-folder>` is the folder containing this SKILL.md. Below, `fridge` means that full
-command. If you can't resolve the path, look where plugins are usually installed:
-`find ~ /workspace /opt -path '*fridge-door/scripts/fridge.py' 2>/dev/null | head -1`.
+command.
 
 - Every command prints JSON: `{"ok": true, "summary": ...}` or
   `{"ok": false, "error": "...", "hint": "...", "code": "..."}`. When something fails, follow the
   `hint`; don't work around the toolkit. Most results include a ready-made `text` or `summary`.
-- **`ask_owner`** is a question only the household owner may answer (rule 5).
+- **`ask_owner`** is a question only the household owner may answer; its `confirm` code goes back
+  with their yes (rule 5).
 - **`pending_notices`** means the person talking has news waiting (a task someone gave them, for
   example). Follow the `notices_hint` that comes with it.
 - **`--dry-run`** previews a change and saves nothing (most commands that add or change things take
@@ -90,22 +90,23 @@ command. If you can't resolve the path, look where plugins are usually installed
 
 | Where the message came from | Pass |
 |---|---|
-| A one-to-one chat with the person who set it up | nothing: they're the household's direct-chat speaker |
+| A one-to-one chat with the person who set it up | `--chat <chat-id>` once it's registered (setup does it when you pass `--chat` there: do, wherever your platform gives chats an id); nothing only on a platform without chat ids, such as a terminal |
 | A group chat the owner registered | `--chat <chat-id> --from <their handle>` (refused until the chat is registered and the person linked) |
 | Another adult's own one-to-one chat with you | `--chat <chat-id>`, once the owner registered it with `who chat <chat-id> --type direct --member <name>` (the owner confirms they're 18 or over) |
 
-Use `--as <adult>` only when the platform itself tells you who is writing, never because someone
-claims a name. In someone's own registered one-to-one chat it's refused: everything there runs as
-them. `fridge who am-i` (with the same options) says who a message runs as and who will see the
-reply. Setting chats up is in [references/setup-and-members.md](references/setup-and-members.md).
+Once the owner's own chat is registered, every message must say which chat it came from
+(`which_chat` otherwise), and a chat nobody registered is refused, so no other chat can act as the
+owner. Use `--as <adult>` only when the platform itself tells you who is writing, never because
+someone claims a name; it's refused in group chats and in someone's own chat. `fridge who am-i`
+(with the same options) says who a message runs as and who will see the reply. Setting chats up is in [references/setup-and-members.md](references/setup-and-members.md).
 
 **First thing every session:** run `fridge doctor`. If `setup.missing` isn't empty, finish the setup
 before anything else.
 
 **Showing what it can do** (before setup, or for a demo): `fridge --home /tmp/fridge-door-demo demo
---region CA` (or `GB`, `AU`, `US`) builds a sample household with lists, chores, a calendar, recipes,
-a meal plan, notes and a budget. Keep using that `--home` for the demo, and never put demo data in
-the household's real data folder.
+--region CA` (or `GB`, `AU`, `US`; add `--timezone <their zone>` so its day matches theirs) builds a
+sample household with lists, chores, a calendar, recipes, a meal plan, notes and a budget. The demo
+needs its own `--home` (it refuses without one); keep using that `--home` for the demo.
 
 ## What they say → what you do
 
@@ -122,16 +123,21 @@ the household's real data folder.
 | "Good morning", "what's on today?" | `fridge today` | [today-reminders-printables.md](references/today-reminders-printables.md) |
 | "Print the week for the fridge", "print the shopping list" | `print week`, `print list` | [today-reminders-printables.md](references/today-reminders-printables.md) |
 | Your own scheduled routine | `remind due`, then pass the reminders on | [today-reminders-printables.md](references/today-reminders-printables.md) |
+| "Undo that", "bring back the dentist appointment" (anything deleted) | `fridge bin show`, `fridge bin restore <name>` | [lists-and-chores.md](references/lists-and-chores.md#the-bin) |
 
 ## Fast paths
 
 **Setup in one message.** Ask only what you can't default: the household's name (optional), who
-lives there, and the country. List the person setting it up first: they become the owner and the
-direct-chat speaker. Mark kids and teens as "(kid)", "(teen)" or with an age, which only picks the
-role and isn't stored. Then:
-`fridge setup --name "The Garcias" --members "Ana, Luis, Sofia (kid), Mateo (15)" --country MX`.
-Repeat the `summary`, say how the kids take part (their chores and stars on the fridge sheet), and
-offer the routines below. A person living alone is done after this one step.
+lives there, and the country, plus, for a country with several time zones (Australia, Brazil,
+Canada, Chile, Spain, Indonesia, Mexico, Portugal, the US), which province, state or city. List the
+person setting it up first: they become the owner. Mark kids and teens as "(kid)", "(teen)" or with
+an age, which only picks the role and isn't stored. Pass this chat's id when your platform has one,
+so it's registered as theirs. Then:
+`fridge setup --name "The Garcias" --members "Ana, Luis, Sofia (kid), Mateo (15)" --country MX
+--timezone America/Mexico_City --chat <this chat's id>`.
+Without the zone, setup answers `needs_timezone` with the main ones: ask, then run it again. Repeat
+the `summary`, say how the kids take part (their chores and stars on the fridge sheet), and offer
+the routines below. A person living alone is done after this one step.
 
 **"Add milk x2 and eggs."** `fridge shop add "milk x2" eggs` → "Groceries: added: Milk x2, Eggs."
 Pass items the way people say them ("2 pints of milk", "eggs and bread"): amounts are read, two
@@ -142,12 +148,14 @@ items said as one are split, items file themselves into aisles, and nothing is a
 ## Routines to offer (if your platform has scheduled tasks)
 
 - **Morning Today summary** for each adult who wants it, in their own chat: `fridge today`.
-- **Reminders** every 15 minutes: `fridge remind due` (the owner's routine, in a direct chat). Pass
-  each item in `send` to that person, word for word, in one of the chats its `chats` list names
-  (`"direct"` is your one-to-one chat with them; private things never name a group). Post nothing
-  anywhere else. `held` items wait for quiet hours to end and come back in `send` then. People in
-  `nowhere` had a reminder but no chat to get it in: suggest the owner registers their own chat.
-  Nothing goes outside the chat platform unless `outside_chat_ok` is true.
+- **Reminders** are opt-in: offer them to each adult, and only when that adult says yes, in their
+  own chat, run `fridge member edit <their name> --reminders on` (nobody can turn them on for
+  someone else). Then every 15 minutes: `fridge remind due` (the owner's routine, in a direct
+  chat). Pass each item in `send` to that person, word for word, in one of the chats its `chats`
+  list names (`"direct"` is your one-to-one chat with them; private things never name a group).
+  Post nothing anywhere else. `held` items wait for quiet hours to end and come back in `send`
+  then. People in `nowhere` had a reminder but no chat to get it in: suggest the owner registers
+  their own chat. Nothing goes outside the chat platform unless `outside_chat_ok` is true.
 - **Weekly planning** the evening before the week starts: plan the meals, make the week's grocery
   list (`meal to-list --dry-run` first), and print the fridge sheet (`print week`).
 - **Monthly budget check** for the adults: `fridge budget month`.

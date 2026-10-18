@@ -125,7 +125,7 @@ class MealPlanTest(HomeTest):
         self.ok("member", "access", "Luis", "--set", "recipes=none")
         self.ok("who", "chat", "pair", "--type", "group", "--minors", "no")
         self.ok("who", "link", "pair", "--participant", "@ana", "--member", "Ana")
-        self.ok("who", "link", "pair", "--participant", "@luis", "--member", "Luis", "--owner-confirmed", "yes")
+        self.confirmed("who", "link", "pair", "--participant", "@luis", "--member", "Luis", words="yes")
         self.err("hidden_in_group", "meal", "to-list", "--chat", "pair", "--from", "@ana")
 
     def test_meal_plan_access(self):

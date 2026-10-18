@@ -39,8 +39,8 @@ household's records are plain files on the computer your agent runs on.
 - **A simple household budget.** Monthly categories, spending (it can read a receipt photo and check with you
   first), recurring bills with reminders, savings goals, and a month report with charts. Exact to the cent, in
   your currency.
-- **Reminders that respect quiet hours,** worded when they're sent, only in chats that may see them, and never
-  twice.
+- **Reminders that respect quiet hours,** for the adults who ask for them: worded when they're sent, only in
+  chats that may see them, and never twice.
 - **Printables:** the one-page weekly fridge sheet above, month and week calendars, shopping checklists, recipe
   cards and a budget report, as PDF and web pages.
 
@@ -53,6 +53,9 @@ you like), and the country sets the rest, which you can change:
   code shows too ("$1,234.50 CAD").
 - Your time zone, date format (31/12, 12/31 or 2026-12-31), 12- or 24-hour clock, the day your week starts,
   metric or US units, and A4 or Letter paper.
+- Time zones come from your computer's own time zone list, so rule changes arrive with its updates. British
+  Columbia and Alberta stop changing their clocks from November 2026: on a computer whose list predates that,
+  their winter times would be an hour off until it updates.
 - Any household: one person or eight, kids or none, flatmates, or an extended family across several
   households.
 - Printouts are in English. Names and notes can be in any language; for scripts the built-in PDF fonts can't
@@ -64,30 +67,37 @@ Fridge Door is made for the adults of a household. Kids and teens take part thro
 
 - **Kids don't chat with the AI.** The AI apps don't allow it (Claude and Cursor are for adults; Grok needs
   users to be 13 or older, with a parent's permission until 18), and it isn't needed. Only adults can be linked
-  to a chat, and the owner confirms each one is 18 or older. If a teen is in your family group chat, you can
-  tell Fridge Door so: it won't act on their messages, and that chat only shows kid-level things.
+  to a chat, and the owner confirms each one is 18 or older with a clear yes. An answer that mentions an age
+  under 18, a school grade or "almost 18" is refused, and making a teen an adult member asks the same question.
+  If a teen is in your family group chat, you can tell Fridge Door so: it won't act on their messages, and that
+  chat only shows kid-level things.
 - **A child is a first name or nickname, a colour, their chores and a star count,** with no place for a
-  surname, age, photo, school, location or health details. A child's birthday can go on the calendar as a day
-  and month.
+  surname, age, photo, school, location or health details (plus, for a teen in a family group chat, their
+  handle there, so they're recognised). A note about a child's health or school can only be sensitive or
+  private, so it never shows in a group chat or on the fridge sheet. A child's birthday can go on the calendar
+  as a day and month.
 - **Kids join in on paper.** The weekly fridge sheet shows their chores with tick boxes and their stars. You tick
   chores off in chat ("Mia did the dishes") and Mia gets a star. There are no streaks, badges, characters or
   messages to kids.
 - **Group chats with kids in them** only ever show chores and the grocery list.
 - **You can see and delete everything.** Only the household owner adds or removes people; removing someone
-  erases their details; deleting the household erases everything; finished chores and the activity log clear
-  themselves after 90 days (you can change that).
+  erases their details; deleting the household erases everything. Deleted things wait in a bin for 90 days in
+  case you change your mind, then go for good, and finished chores and the activity log clear themselves after
+  90 days too (you can change that).
 - **Netty Labs receives no data.** The plugin has no networking code at all (a test fails if any is added), and
   no accounts, analytics, ads or telemetry.
 - **Where your data is:** in files on the computer your AI agent runs on, and in your chats with it. If you use
   a hosted agent such as Grok Bot, those files and chats are on that service's servers, under its privacy
-  policy and age rules; use its settings to delete them.
+  policy and age rules; use its settings to delete them. Photos and receipt pictures stay wherever they were
+  saved: Fridge Door keeps only where they are, so deleting the household doesn't delete those files.
 - **For personal and family use.** A school, daycare, club or business using it takes on its own legal
   obligations.
 
 ## Safe by design
 
 - **Your OK first.** Nothing is sent outside your chat, paid or deleted without your say-so, and the owner
-  decides who's in the household and who sees what.
+  decides who's in the household and who sees what. Only a clear yes to that exact question counts: "ok",
+  "sure", an emoji or "yes, but later" doesn't. Reminders only go to adults who turned them on themselves.
 - **Everyone sees only their share.** Access is set per person and per module (calendar, lists, recipes,
   budget...), private things stay private (the owner's export leaves them out too), and a group chat shows only
   what everyone in it may see. Bill reminders and private reminders only go to the person's own chat.
@@ -97,20 +107,33 @@ Fridge Door is made for the adults of a household. Kids and teens take part thro
 
 ## Install
 
-**Grok Bot**: open **Plugins** in the sidebar, search for **Fridge Door**, and add it. Then say "set us up".
+**Works today:**
 
-**Cursor**: install **Fridge Door** from the Cursor Marketplace. For a local copy:
-`git clone https://github.com/nettylabs/fridge-door ~/.cursor/plugins/local/fridge-door`, then reload.
+- **Any agent with a terminal, Grok Bot included:** point it at this repository and say: *"Clone
+  https://github.com/nettylabs/fridge-door and follow skills/fridge-door/SKILL.md."*
+- **Claude Code:** `/plugin marketplace add nettylabs/fridge-door`, then `/plugin install fridge-door@nettylabs`.
+- **Cursor, as a local copy:** `git clone https://github.com/nettylabs/fridge-door ~/.cursor/plugins/local/fridge-door`,
+  then reload.
 
-**Grok Build**: `grok plugin install nettylabs/fridge-door --trust`
-
-**Claude Code**: `/plugin marketplace add nettylabs/fridge-door`, then `/plugin install fridge-door@nettylabs`
-
-**Any agent with a terminal**: point it at this repository and say: *"Clone
-https://github.com/nettylabs/fridge-door and follow skills/fridge-door/SKILL.md."*
+**Coming soon:** Fridge Door isn't in the Grok Bot **Plugins** list, the Cursor Marketplace or xAI's Grok Build
+catalog yet. Each one needs a review first, and this section will say when it's live.
 
 Requires Python 3.9 or newer, standard on most Linux machines, including typical agent cloud computers. On a Mac or
-PC without it, install it from python.org. Nothing to `pip install`.
+PC without it, install it from python.org. There's nothing else to install, except on Windows: run
+`pip install tzdata` once, because Python on Windows has no time zone list of its own and Fridge Door needs one for
+dates and reminders.
+
+## Updates
+
+Every change gets a new version number and a CHANGELOG entry, and is published here first.
+
+- **A clone:** run `git pull` in its folder, or ask your agent to update it.
+- **Claude Code:** run `claude plugin marketplace update nettylabs`, then `claude plugin update fridge-door@nettylabs`,
+  and start a new session (or run `/reload-plugins`). For updates to arrive by themselves, open `/plugin`, go to
+  **Marketplaces**, pick **nettylabs** and choose **Enable auto-update**.
+- **The listings, once live:** xAI's Grok Build catalog points at a specific version here, and each new one is
+  reviewed by xAI before it moves. This section will say how updates reach the Grok Bot and Cursor listings once
+  they're live.
 
 ## Try it in two minutes
 

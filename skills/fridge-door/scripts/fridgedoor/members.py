@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import re
 
-from . import access
-from .util import ToolError, clean_text, fold, now_stamp, owner_words, parse_hours_range, plural
+from . import access, confirm
+from .util import ToolError, clean_text, fold, now_stamp, parse_hours_range, plural
 
 # The 10-colour member palette: mid-tones that read on white paper and dark screens.
 PALETTE = (
@@ -118,6 +118,11 @@ def guard_last_owner(members: list, member: dict, new_role: str | None) -> None:
         )
 
 
+def wants_reminders(member: dict) -> bool:
+    """Reminders are opt-in: an adult gets them only after turning them on themselves (member edit --reminders on)."""
+    return bool(member.get("reminders"))
+
+
 def set_role(member: dict, role: str, keep_custom: bool = False) -> None:
     """Change the role; the access levels reset to the role's preset unless keep_custom."""
     role = role.lower()
@@ -203,6 +208,7 @@ def public(member: dict, settings: dict | None = None, viewer=None, detail: bool
         out["chats"] = False
     else:
         out["chats"] = bool(member.get("chat_ok")) or member["role"] == "owner"
+        out["reminders"] = wants_reminders(member)
         if detail and settings is not None:
             out["quiet_hours"] = quiet_hours(member, settings)
         if detail:
@@ -315,10 +321,17 @@ def cmd_edit(ctx, args) -> dict:
     hh = ctx.household
     target = _find(ctx, args.member)
     if target["id"] != ctx.member["id"]:
+        if args.reminders == "on":  # reminders are each adult's own yes, never someone else's
+            raise ToolError(
+                f"Only {target['name']} can turn on their own reminders: it's their yes to hear from the agent.",
+                hint=f"Ask {target['name']}. If they want reminders, they say so in their own chat, which runs: "
+                f"fridge member edit {target['name']} --reminders on",
+                code="not_their_own",
+            )
         ctx.viewer.require_owner("change another member's details")
-    if not any((args.name, args.color, args.quiet_hours, args.today_sections)):
-        raise ToolError("Nothing to change.", hint="Pass --name, --color, --quiet-hours or --today-sections.",
-                        code="usage")  # fmt: skip
+    if not any((args.name, args.color, args.quiet_hours, args.today_sections, args.reminders)):
+        raise ToolError("Nothing to change.", hint="Pass --name, --color, --quiet-hours, --today-sections or "
+                        "--reminders.", code="usage")  # fmt: skip
     with hh.transaction(dry_run=args.dry_run):
         member = hh.member(target["id"])
         changed = []
@@ -328,10 +341,11 @@ def cmd_edit(ctx, args) -> dict:
         if args.color:
             member["color"] = color_hex(args.color)
             changed.append("colour")
-        if args.quiet_hours or args.today_sections:
+        if args.quiet_hours or args.today_sections or args.reminders:
             if member["role"] in access.MINOR_ROLES:
                 raise ToolError(
-                    f"{member['name']} doesn't chat with the agent, so quiet hours and Today sections don't apply.",
+                    f"{member['name']} doesn't chat with the agent, so quiet hours, Today sections and reminders "
+                    "don't apply.",
                     code="minor_cannot_chat",
                 )
             if args.quiet_hours:
@@ -340,6 +354,12 @@ def cmd_edit(ctx, args) -> dict:
             if args.today_sections:
                 set_today_sections(member, args.today_sections)
                 changed.append("Today sections")
+            if args.reminders == "on":
+                member["reminders"] = {"on": True, "at": now_stamp()}
+                changed.append("reminders (on)")
+            elif args.reminders == "off":
+                member.pop("reminders", None)
+                changed.append("reminders (off)")
         hh.touch("household")
         hh.log("member.edit", ctx.member["id"], member=member["id"], fields=changed)
         result = public(member, hh.settings, ctx.viewer)
@@ -350,7 +370,7 @@ def cmd_edit(ctx, args) -> dict:
 def cmd_access(ctx, args) -> dict:
     ctx.viewer.require_owner("change roles and access")
     from . import todos
-    from .context import clear_member_from_hub, drop_member_chats
+    from .context import adult_confirmed, clear_member_from_hub, drop_member_chats
 
     hh = ctx.household
     target = _find(ctx, args.member)
@@ -358,6 +378,13 @@ def cmd_access(ctx, args) -> dict:
         lines = [f"{access.MODULE_LABELS[m]}: {lvl}" for m, lvl in target["access"].items()]
         return {"member": public(target, hh.settings), "text": "\n".join(lines),
                 "summary": f"{target['name']} is {target['role']}."}  # fmt: skip
+    # Making a kid or teen an adult lets them chat with the agent and see the budget: the owner's clear yes first.
+    promoting = bool(args.role) and args.role.lower() in access.ADULT_ROLES and target["role"] in access.MINOR_ROLES
+    words = adult_confirmed(
+        ctx, target, args.owner_confirmed, args.confirm,
+        why=f"Making {target['name']} an adult lets them chat with the agent and see the budget, so the owner must "
+        "confirm they're 18 or older.",
+    ) if promoting else None  # fmt: skip
     with hh.transaction(dry_run=args.dry_run):
         member = hh.member(target["id"])
         deleted, unlinked = [], []
@@ -368,6 +395,8 @@ def cmd_access(ctx, args) -> dict:
                 check_name([], member["name"], role)  # kids and teens keep only a first name or nickname
                 deleted, unlinked = drop_member_chats(hh, member["id"])  # and never chat with the agent
             set_role(member, role)
+            if words:
+                member["chat_ok"] = {"owner_said": words, "at": now_stamp(), "by": ctx.member["id"]}
         if args.reset:
             member["access"] = access.preset(member["role"])
         if args.set:
@@ -401,16 +430,12 @@ def cmd_remove(ctx, args) -> dict:
     hh = ctx.household
     target = _find(ctx, args.member)
     guard_last_owner(hh.members, target, None)
-    words = owner_words(args.owner_confirmed)
-    if not words:
-        raise ToolError(
-            f"Removing {target['name']} erases their profile and personal list, unassigns their tasks and takes "
-            "their name off every record. It can't be undone.",
-            hint="Ask the owner the question below. Only if they say yes, pass their exact words with "
-            "--owner-confirmed.",
-            code="needs_owner",
-            ask_owner=f"Remove {target['name']} from {hh.name} and erase their details?",
-        )
+    words = confirm.owner_yes(
+        hh, ctx.member["id"], f"member.remove|{target['id']}",
+        f"Remove {target['name']} from {hh.name} and erase their details?", args.owner_confirmed, args.confirm,
+        why=f"Removing {target['name']} erases their profile and personal list, unassigns their tasks and takes their "
+        "name off every record. It can't be undone.",
+    )
     with hh.transaction(dry_run=args.dry_run):
         changes = forget(hh, target["id"])
         hh.meta()["members"] = [m for m in hh.members if m["id"] != target["id"]]
@@ -493,6 +518,7 @@ def register(cli) -> None:
     p.add_argument("--color")
     p.add_argument("--quiet-hours", help='"HH:MM-HH:MM", none, or default (the household\'s)')
     p.add_argument("--today-sections", help="Comma list from: " + ", ".join(TODAY_SECTIONS) + "; or all")
+    p.add_argument("--reminders", choices=("on", "off"), help="on: they'd like reminders (only they can say so); off")
     p.add_argument("--dry-run", action="store_true")
     p = grp.add(
         "access",
@@ -502,6 +528,7 @@ def register(cli) -> None:
             "fridge member access Mateo --role teen",
             "fridge member access Sofia --set grocery=edit --set calendar=view",
             "fridge member access Luis --reset",
+            'fridge member access Zoe --role adult --owner-confirmed "yes, Zoe is 19" --confirm 1c5e2a0-3f9b27d41c',
         ],
         cmd_access,
     )
@@ -509,6 +536,8 @@ def register(cli) -> None:
     p.add_argument("--role", choices=access.ROLES)
     p.add_argument("--set", action="append", help="module=level (none, view or edit); repeat for more")
     p.add_argument("--reset", action="store_true", help="Back to the role's preset")
+    p.add_argument("--owner-confirmed", help="Making a kid or teen an adult: the owner's own words that they're 18+")
+    p.add_argument("--confirm", help="The code that came with the owner's question (confirm)")
     p.add_argument("--dry-run", action="store_true")
     p = grp.add(
         "stars",
@@ -522,9 +551,11 @@ def register(cli) -> None:
     p = grp.add(
         "remove",
         "Remove a member and erase their details (owner, needs the owner's own words).",
-        ['fridge member remove "Uncle Leo" --owner-confirmed "yes, remove Leo"'],
+        ['fridge member remove "Uncle Leo"',
+         'fridge member remove "Uncle Leo" --owner-confirmed "yes, remove Leo" --confirm 1c5e2a0-3f9b27d41c'],
         cmd_remove,
     )
     p.add_argument("member")
     p.add_argument("--owner-confirmed", help="The owner's own words confirming the removal")
+    p.add_argument("--confirm", help="The code that came with the owner's question (confirm)")
     p.add_argument("--dry-run", action="store_true")

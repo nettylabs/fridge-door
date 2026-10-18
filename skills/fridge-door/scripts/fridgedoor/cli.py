@@ -121,7 +121,7 @@ def _flag_notices(ctx, args, result: dict) -> dict:
 
 def build_parser() -> argparse.ArgumentParser:
     from . import (budget, context, demo, events, ics, mealplan, members, notes, notices, onboarding, printables,
-                   recipes, reminders, shopping, today, todos)
+                   recipes, reminders, shopping, today, todos, trash)
 
     parser = _Parser(
         prog="fridge",
@@ -149,6 +149,7 @@ def build_parser() -> argparse.ArgumentParser:
     mealplan.register(cli)
     notes.register(cli)
     budget.register(cli)
+    trash.register(cli)
     reminders.register(cli)
     ics.register(cli)
     printables.register(cli)

@@ -13,8 +13,9 @@ from __future__ import annotations
 import datetime as _dt
 import re
 
-from . import access, recur
-from .util import MONTH_WORDS, ToolError, clean_text, day_text, fold, match_one, now_stamp, parse_time, plural
+from . import access, recur, trash
+from .util import (MONTH_WORDS, ToolError, clean_text, day_text, fold, get_tz, match_one, now_stamp, parse_time,
+                   plural)
 
 TYPES = {
     "appointment": "📅", "school": "🏫", "sports": "⚽", "birthday": "🎂", "anniversary": "💍", "bill": "💳",
@@ -429,7 +430,30 @@ def cmd_add(ctx, args) -> dict:
         summary += " (moved to the first date that matches the repeat)"
     if vis != "household":
         summary += " (private)" if vis == "private" else f" (only {', '.join(hh.member_name(m) for m in members)})"
-    return {"event": occ, "event_id": event["id"], "dry_run": args.dry_run, "summary": summary + "."}
+    out = {"event": occ, "event_id": event["id"], "dry_run": args.dry_run, "summary": summary + "."}
+    skipped = _skipped_time(hh, day, time)
+    if skipped:
+        out["warning"] = skipped
+        out["summary"] += f" {skipped}"
+    from .members import wants_reminders
+
+    if event["reminders"] and not wants_reminders(ctx.member):
+        out["hint"] = ("Reminders are off for you, so this one won't reach you. If you'd like reminders, say so, and "
+                       f"this runs: fridge member edit {ctx.member['name']} --reminders on")  # fmt: skip
+    return out
+
+
+def _skipped_time(hh, day: _dt.date, time: str | None) -> str | None:
+    """A time the clocks jump over that day (2:30am the night they go forward) doesn't exist: say what it becomes."""
+    if not time:
+        return None
+    zone = get_tz(hh.tz())
+    local = _dt.datetime.combine(day, parse_time(time)).replace(tzinfo=zone)
+    real = local.astimezone(_dt.timezone.utc).astimezone(zone)
+    if real.replace(tzinfo=None) == local.replace(tzinfo=None):
+        return None
+    return (f"{fmt_time(time, hh.settings)} doesn't exist on {hh.day(day)} here (the clocks go forward that night), so "
+            f"it would really be {fmt_time(real.strftime('%H:%M'), hh.settings)}. Change the time if that's not right.")
 
 
 def _range_command(ctx, first: _dt.date, last: _dt.date, args, title: str) -> dict:
@@ -617,6 +641,7 @@ def cmd_delete(ctx, args) -> dict:
         data = hh.data("calendar")
         event = find_event(ctx, data, args.event)
         _owned_or_editor(ctx, event)
+        undo = None
         if args.start:
             if not event.get("rrule"):
                 raise ToolError("--from-date is for repeating events.", code="usage")
@@ -627,10 +652,12 @@ def cmd_delete(ctx, args) -> dict:
             summary = f"{event['title']} now ends on {hh.day(stop)}."
         else:
             data["events"] = [e for e in data["events"] if e["id"] != event["id"]]
+            undo = trash.put(hh, "event", [event], ctx.member["id"])
             summary = f"Deleted {event['title']}" + (" and all its repeats." if event.get("rrule") else ".")
+            summary += f" {trash.kept_for(hh)}"
         hh.touch("calendar")
         hh.log("cal.delete", ctx.member["id"], event=event["id"])
-    return {"summary": summary}
+    return {"summary": summary, "undo": undo}
 
 
 def cmd_birthday(ctx, args) -> dict:
@@ -658,6 +685,12 @@ def cmd_birthday(ctx, args) -> dict:
     title = f"{name}'s birthday" if kind == "birthday" else clean_text(args.name, "name", max_len=100)
     with hh.transaction(dry_run=args.dry_run):
         data = hh.data("calendar")
+        same = next((e for e in data["events"] if e.get("kind") == "birthday" and e.get("type") == kind
+                     and ((member and (e.get("birthday") or {}).get("member") == member["id"])
+                          or (not member and fold(e["title"]) == fold(title)))), None)  # fmt: skip
+        if same:
+            raise ToolError(f"{same['title']} is already on the calendar.",
+                            hint=f'Change it with: fridge cal edit "{same["title"]}" --date <date>', code="exists")
         event = {
             "id": hh.next_id("event"), "title": title, "type": kind, "icon": TYPES[kind], "kind": "birthday",
             "date": start.isoformat(), "time": None, "end_time": None, "end_date": None, "location": None,
@@ -710,11 +743,15 @@ def forget_member(hh, member_id: str) -> list:
         private = event.get("visibility") == "private" and event.get("owner") == member_id
         return private or (event.get("birthday") or {}).get("member") == member_id
 
-    data["events"] = [e for e in data["events"] if not theirs(e)]
-    for event in data["events"]:
+    def scrub(event: dict) -> None:
         event["members"] = [m for m in event.get("members", []) if m != member_id]
         if event.get("owner") == member_id:
             event["owner"] = None
+
+    data["events"] = [e for e in data["events"] if not theirs(e)]
+    for event in data["events"]:
+        scrub(event)
+    trash.forget(hh, "calendar", member_id, theirs, scrub)
     hh.touch("calendar")
     gone = before - len(data["events"])
     return [f"deleted {plural(gone, 'private event')}"] if gone else []

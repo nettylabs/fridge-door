@@ -468,11 +468,19 @@ def cmd_edit(ctx, args) -> dict:
     return {"list": view, "dry_run": args.dry_run, "summary": f"Updated {view['name']}: {', '.join(changed)}."}
 
 
+def _which_list(args) -> str:
+    """shop delete and shop restore take the list's name as a word or with --list, whichever the agent uses."""
+    name = getattr(args, "name", None) or getattr(args, "list", None)
+    if not name:
+        raise ToolError("Which list?", hint="e.g. fridge shop delete Hardware (or --list Hardware)", code="usage")
+    return name
+
+
 def cmd_delete(ctx, args) -> dict:
     hh = ctx.household
     with hh.transaction():
         data = hh.data("shopping")
-        lst = find_list(ctx, data, args.list, need="edit")
+        lst = find_list(ctx, data, _which_list(args), need="edit")
         if lst.get("default") == "grocery":
             raise ToolError(f"{lst['name']} is the household's main grocery list and can't be deleted.",
                             hint="Rename it, or clear it with: fridge shop clear", code="protected")  # fmt: skip
@@ -490,7 +498,7 @@ def cmd_restore(ctx, args) -> dict:
     with hh.transaction():
         data = hh.data("shopping")
         deleted = [lst for lst in data["lists"] if lst.get("deleted_at")]
-        lst = match_one(deleted, args.list, "deleted list", hint="See them with: fridge shop lists --deleted")
+        lst = match_one(deleted, _which_list(args), "deleted list", hint="See them with: fridge shop lists --deleted")
         ctx.viewer.require(module_of(lst), "edit", f"restore {lst['name']}")
         if any(fold(x["name"]) == fold(lst["name"]) and not x.get("deleted_at") for x in data["lists"]):
             raise ToolError(f"Another list is called {lst['name']} now.", hint="Rename that one first.", code="exists")
@@ -956,11 +964,14 @@ def register(cli) -> None:
     p.add_argument("--color")
     p.add_argument("--dry-run", action="store_true")
     p = grp.add("delete", "Delete a list (restorable for the retention period).",
-                ["fridge shop delete --list Hardware"],
+                ["fridge shop delete Hardware", "fridge shop delete --list Hardware"],
                 cmd_delete)  # fmt: skip
-    p.add_argument("--list", required=True)
-    p = grp.add("restore", "Bring back a deleted list.", ['fridge shop restore Hardware'], cmd_restore)
-    p.add_argument("list")
+    p.add_argument("name", nargs="?", help="The list")
+    p.add_argument("--list", help="The list (the same as giving its name)")
+    p = grp.add("restore", "Bring back a deleted list.", ["fridge shop restore Hardware",
+                "fridge shop restore --list Hardware"], cmd_restore)  # fmt: skip
+    p.add_argument("name", nargs="?", help="The deleted list")
+    p.add_argument("--list", help="The deleted list (the same as giving its name)")
     p = grp.add(
         "add",
         'Add items ("milk x2" sets a quantity). Items file themselves into aisles; items already there aren\'t added '

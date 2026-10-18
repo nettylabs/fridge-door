@@ -58,9 +58,15 @@ The result has:
 - **`outside_chat_ok`**: false unless the owner allowed reminders outside the chat platform. While
   it's false, never email or text a reminder.
 
+Reminders are opt-in: an adult gets them only after saying yes in their own chat, which runs
+`fridge member edit <their name> --reminders on`. Nobody can turn them on for someone else; the
+owner can turn anyone's off (`--reminders off`). `remind due` lists who's on in `reminders_on`, and
+adding an event with `--remind` says so when the person's own reminders are off.
+
 Reminders go only to adults: a kid's event reminds the adult who added it, and so does an event for
 nobody in particular or for adults who never talk with you ("remind me about Marc's dentist"). A
-birthday reminds every adult except the person whose birthday it is. Each reminder goes out once, worded when it's sent ("today at 10:00", not "in 12
+birthday reminds every adult except the person whose birthday it is (among those who want
+reminders). Each reminder goes out once, worded when it's sent ("today at 10:00", not "in 12
 hours"). One that comes due during the person's quiet hours waits until they end, unless the thing
 starts before then: that one goes just before their quiet hours begin. "Hours before" count real
 hours, across a clock change; "days before" keep the time of day. Quiet hours come from the member
@@ -81,17 +87,20 @@ conversation and mention what's due.
 | "Print the chili recipe for 6" | `fridge print recipe Chili --servings 6` |
 | "A budget report" | `fridge print budget` (`--month 2026-09`) |
 
-- Files go to the household's output folder; their paths are in `files`. Send the file in the chat.
-  `--format html` makes a web page instead (handy on a phone), and `--format both` makes both.
+- Files go to a folder for the chat they're made in: the person's own folder in a one-to-one chat,
+  the group's own folder in a group chat, so files made for different people never overwrite each
+  other. Their paths are in `files`: send the file in that chat. `--format html` makes a web page
+  instead (handy on a phone), and `--format both` makes both.
 - The paper size (A4 or Letter) and the date format follow the household's settings.
 - **The fridge sheet** is one landscape page: the week's household events, dinners, each member's
   chores day by day with tick boxes (with an "Anyone" row for unassigned ones), the kids' stars and
   pinned notes. Nothing private, sensitive or financial is ever on it, because anyone in the home
-  can read it. Pinned notes are on it although a kid's access doesn't include notes: the adults
-  choose what to pin.
-- **Private printouts** (a calendar with `--mine`, which adds the person's own private events, and
-  the budget report) go to that person's own folder, never the shared one, and are deleted if they
-  leave the household.
+  can read it. The week's household events and pinned notes are on it even though a kid's access
+  doesn't include the calendar or notes: it's for the home, printed by an adult, who chooses what to
+  pin.
+- **A person's own printouts** (a calendar with `--mine`, which adds their private events, and the
+  budget report among them) are deleted if they leave the household; a group chat's printouts go
+  when the chat is removed (`who forget-chat`).
 - **The budget report** is private: the toolkit makes it only in a direct chat with an adult who
   sees the budget (`direct_chat_only` in a group). Never suggest putting it on the fridge.
 - The built-in PDF covers Western European letters. For other scripts (Greek, Cyrillic, Arabic,

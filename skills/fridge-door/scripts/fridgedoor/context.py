@@ -11,12 +11,12 @@
 
 from __future__ import annotations
 
-import re
+import shutil
 
-from . import access
+from . import access, confirm
 from .access import Viewer
 from .store import Hub, Household
-from .util import ToolError, clean_text, fold, match_one, now_stamp, owner_words, plural, set_local_tz
+from .util import ToolError, clean_text, fold, match_one, now_stamp, plural, set_local_tz
 
 
 class Ctx:
@@ -81,6 +81,15 @@ def resolve(hub: Hub, args) -> Ctx:
             code="chat_not_linked",
         )
     set_local_tz(household.tz())
+    if not chat_id and _speaker_chat_registered(hub, household):
+        # The owner registered their own chat (setup --chat): from then on every message says which chat it came
+        # from, and an unregistered chat is refused, so nobody else's chat can act as them (not even with --as).
+        raise ToolError(
+            f"Say which chat this came from: {household.name}'s direct chats are registered.",
+            hint="Pass --chat <chat-id> with every message. A chat that isn't registered is refused until the owner "
+            "registers it (who chat).",
+            code="which_chat",
+        )
 
     actor = None
     as_member = getattr(args, "as_member", None)
@@ -166,35 +175,28 @@ def resolve(hub: Hub, args) -> Ctx:
 # --------------------------------------------------------------------------- commands
 
 
+def _speaker_chat_registered(hub: Hub, household: Household) -> bool:
+    speaker = hub.speaker(household.id)
+    return bool(speaker) and any(chat.get("type") == "direct" and chat.get("member") == speaker
+                                 for chat in household.meta().get("chats", {}).values())  # fmt: skip
+
+
 REGISTER_HINT = ("Ask the owner to register it once: fridge who chat <chat-id> --type group --minors yes|no for a "
                  "group chat, or --type direct --member <name> for one person's own chat.")
-_UNDER_18 = re.compile(r"\b(?:is|'s|aged?|only|just|turns?|turned)\s+(?:1[0-7]|[1-9])\b|\b(?:1[0-7]|[1-9])\s*"
-                       r"(?:years?|yrs?|yo|y/o)\b|\bunder\s*18\b|\bnot\s+(?:yet\s+)?18\b|\b(?:minor|teen|kid|child)\b")
-
-
-def _adult_confirmed(member: dict, words) -> str | None:
-    """The owner's words confirming an adult may chat (already confirmed once: None). Refuses a no, or an answer
-    that says they're under 18."""
-    words = owner_words(words)
+def adult_confirmed(ctx: Ctx, member: dict, words, code, why: str | None = None) -> str | None:
+    """The owner's words confirming someone is an adult who may chat (already confirmed once: None): a clear yes to
+    "Is <name> 18 or older?" with that question's code. An answer that says or suggests they're under 18 is
+    refused (confirm.adult_check)."""
     if member["role"] == "owner" or member.get("chat_ok"):
         return None
-    if words and _UNDER_18.search(fold(words)):
-        raise ToolError(
-            f"The owner's answer says {member['name']} is under 18, so they can't chat with the agent.",
-            hint=f"Make them a kid or teen instead (member access {member['name']} --role teen); they take part "
-            "through a parent.",
-            code="minor_cannot_chat",
-        )
-    if not words:
-        raise ToolError(
-            f"Before {member['name']} can chat with the agent, the owner must confirm they're 18 or older.",
-            hint="Ask the owner the question below. Only if they say yes, pass their exact reply with "
-            "--owner-confirmed. Don't answer it yourself.",
-            code="needs_owner",
-            ask_owner=f"Is {member['name']} 18 or older? Fridge Door is for adults to chat with; kids and teens "
-            "take part through a parent.",
-        )
-    return words
+    return confirm.owner_yes(
+        ctx.household, ctx.member["id"], f"adult|{member['id']}",
+        f"Is {member['name']} 18 or older? Fridge Door is for adults to chat with; kids and teens take part through "
+        "a parent.",
+        words, code,
+        why=why or f"Before {member['name']} can chat with the agent, the owner must confirm they're 18 or older.",
+        check=lambda text: confirm.adult_check(member["name"], text),
+    )
 
 
 def _yes_no(value: str, flag: str) -> bool:
@@ -228,7 +230,7 @@ def cmd_chat(ctx: Ctx, args) -> dict:
     if args.type == "direct":
         owner_of_chat = find_member(ctx.household, args.member)["id"] if args.member else ctx.member["id"]
         refuse_minor(ctx.household.member(owner_of_chat))
-        words = _adult_confirmed(ctx.household.member(owner_of_chat), args.owner_confirmed)
+        words = adult_confirmed(ctx, ctx.household.member(owner_of_chat), args.owner_confirmed, args.confirm)
     hh = ctx.household
     with hh.transaction(dry_run=args.dry_run):
         if words:
@@ -279,7 +281,7 @@ def cmd_link(ctx: Ctx, args) -> dict:
     participant = clean_text(args.participant, "participant", max_len=200)
     if access.is_minor(member):
         return _note_minor(ctx, chat, args, member, participant)
-    words = _adult_confirmed(member, args.owner_confirmed)
+    words = adult_confirmed(ctx, member, args.owner_confirmed, args.confirm)
     with hh.transaction(dry_run=args.dry_run):
         m = hh.member(member["id"])
         chat = hh.meta()["chats"][args.chat_id]
@@ -353,14 +355,15 @@ def cmd_forget_chat(ctx: Ctx, args) -> dict:
         hh.log("chat.forget", ctx.member["id"], chat=args.chat_id)
     with ctx.hub.transaction() as data:
         data.get("chats", {}).pop(args.chat_id, None)
-    return {"summary": f"Removed the chat {args.chat_id} from {hh.name}."}
+    shutil.rmtree(hh.chat_output(args.chat_id), ignore_errors=True)  # its printouts go with it
+    return {"summary": f"Removed the chat {args.chat_id} and its printouts from {hh.name}."}
 
 
 def cmd_speaker(ctx: Ctx, args) -> dict:
     ctx.viewer.require_owner("choose who's talking in direct chats")
     member = find_member(ctx.household, args.member)
     refuse_minor(member)
-    words = _adult_confirmed(member, args.owner_confirmed)
+    words = adult_confirmed(ctx, member, args.owner_confirmed, args.confirm)
     if words:
         with ctx.household.transaction():
             ctx.household.member(member["id"])["chat_ok"] = {"owner_said": words, "at": now_stamp(),
@@ -458,7 +461,9 @@ def register(cli) -> None:
         "Register a chat with this household (owner). Group chats must say whether anyone under 18 is in them.",
         [
             "fridge who chat family-group --type group --minors yes",
-            'fridge who chat jo-dm --type direct --member Jo --owner-confirmed "yes, Jo is 34"',
+            "fridge who chat jo-dm --type direct --member Jo",
+            'fridge who chat jo-dm --type direct --member Jo --owner-confirmed "yes, Jo is 34" '
+            "--confirm 1c5e2a0-3f9b27d41c",
         ],
         cmd_chat,
     )
@@ -467,6 +472,7 @@ def register(cli) -> None:
     p.add_argument("--minors", help="yes or no: is anyone under 18 in this group chat?")
     p.add_argument("--member", help="For a direct chat: whose chat it is (default: you)")
     p.add_argument("--owner-confirmed", help="The owner's own words confirming that person is 18 or older")
+    p.add_argument("--confirm", help="The code that came with the owner's question (confirm)")
     p.add_argument("--dry-run", action="store_true", help="Show what would happen without saving")
     p = who.add(
         "link",
@@ -475,7 +481,8 @@ def register(cli) -> None:
         "kids in it.",
         [
             "fridge who link family-group --participant @sam --member Sam",
-            'fridge who link family-group --participant @sam --member Sam --owner-confirmed "yes, Sam is 42"',
+            'fridge who link family-group --participant @sam --member Sam --owner-confirmed "yes, Sam is 42" '
+            "--confirm 1c5e2a0-3f9b27d41c",
             "fridge who link family-group --participant @arjun --member Arjun",
         ],
         cmd_link,
@@ -484,6 +491,7 @@ def register(cli) -> None:
     p.add_argument("--participant", required=True, help="Their handle or id in that chat")
     p.add_argument("--member", required=True, help="The member (name or id)")
     p.add_argument("--owner-confirmed", help="The owner's own words confirming the person is 18 or older")
+    p.add_argument("--confirm", help="The code that came with the owner's question (confirm)")
     p.add_argument("--dry-run", action="store_true")
     p = who.add("unlink", "Unlink a participant from a group chat (owner).",
                 ["fridge who unlink family-group --participant @sam"], cmd_unlink)  # fmt: skip
@@ -496,6 +504,7 @@ def register(cli) -> None:
                 ["fridge who speaker Ana"], cmd_speaker)  # fmt: skip
     p.add_argument("member")
     p.add_argument("--owner-confirmed", help="The owner's own words confirming that person is 18 or older")
+    p.add_argument("--confirm", help="The code that came with the owner's question (confirm)")
     p = who.add("show", "Show the linked chats, their participants and the direct-chat speaker.",
                 ["fridge who show", "fridge who show family-group"], cmd_show)  # fmt: skip
     p.add_argument("chat_id", nargs="?")

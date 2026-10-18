@@ -5,10 +5,10 @@ from __future__ import annotations
 import platform
 import re
 
-from . import __version__, access, budget, members, regions, shopping, todos
+from . import __version__, access, budget, confirm, members, regions, shopping, todos
 from .store import DEFAULT_RETENTION_DAYS, Hub, create_household, remove_household_folder
-from .util import (ToolError, and_list, clean_text, fold, now_stamp, owner_words, parse_hours_range, plural,
-                   set_local_tz, tz_known)
+from .util import (ToolError, and_list, clean_text, fold, no_tz_data, now_stamp, parse_hours_range, plural,
+                   set_local_tz, tz_database_ok, tz_known)
 
 # Old and new names for a few time zones, for computers with an older time zone database.
 _TZ_ALIASES = {"Europe/Kyiv": "Europe/Kiev", "Asia/Kolkata": "Asia/Calcutta", "Asia/Ho_Chi_Minh": "Asia/Saigon"}
@@ -23,6 +23,8 @@ def _timezone(name: str) -> str:
     alias = _TZ_ALIASES.get(name)
     if alias and tz_known(alias):
         return alias
+    if not tz_database_ok():
+        raise no_tz_data()
     raise ToolError(
         f"{name!r} isn't a time zone this computer knows.",
         hint="Use an IANA name such as Europe/London, America/Chicago or Australia/Perth.",
@@ -47,14 +49,6 @@ def _choice(value: str, options, label: str) -> str:
 
 
 # A second time zone to name as an example, for countries that have several.
-OTHER_ZONE_EXAMPLE = {"CA": "America/Vancouver", "US": "America/Los_Angeles", "AU": "Australia/Perth",
-                      "BR": "America/Manaus", "MX": "America/Tijuana", "RU": "Asia/Novosibirsk", "ID": "Asia/Makassar",
-                      "NZ": "Pacific/Chatham", "ES": "Atlantic/Canary", "PT": "Atlantic/Azores", "CL": "Pacific/Easter",
-                      "AR": "America/Argentina/Mendoza", "KZ": "Asia/Aqtobe", "CD": "Africa/Lubumbashi",
-                      "MN": "Asia/Hovd", "EC": "Pacific/Galapagos", "FR": "Indian/Reunion",
-                      "GB": "Europe/London"}  # fmt: skip
-
-
 def build_settings(args) -> tuple:
     """Settings from the country's defaults plus any explicit choices. Returns (settings, notes for the reply)."""
     code = regions.country_code(args.country)
@@ -88,17 +82,17 @@ def build_settings(args) -> tuple:
             code="needs_currency",
         )
     if settings["timezone"] is None:
-        try:
-            settings["timezone"] = _timezone(base["timezone"])
-        except ToolError:
-            settings["timezone"] = "UTC"
-            notes.append("This computer has no time zone database, so times use UTC until a time zone is set.")
         if base["several_time_zones"]:
-            other = OTHER_ZONE_EXAMPLE.get(code, "Region/City")
-            notes.append(
-                f"{base['country_name']} has several time zones; I picked {settings['timezone']}. "
-                f"Say if it's another (household settings --set timezone={other})."
+            zones = regions.ZONES.get(code, [])
+            choices = "; ".join(f"{tz} ({where})" for tz, where in zones)
+            raise ToolError(
+                f"{base['country_name']} has several time zones. Which province, state or city is the household in?",
+                hint=f"Ask, then run this again with --timezone and the zone for their place: {choices}. Any IANA "
+                "name (Region/City) works too.",
+                code="needs_timezone",
+                zones=[{"timezone": tz, "where": where} for tz, where in zones],
             )
+        settings["timezone"] = _timezone(base["timezone"])
         if not base["known"]:
             notes.append("I used international formats for this country; change any setting that's wrong.")
     return settings, notes
@@ -113,7 +107,9 @@ def describe_settings(settings: dict) -> str:
     )
 
 
-def _create(hub: Hub, args) -> dict:
+def _create(hub: Hub, args, own_chat: str | None = None) -> dict:
+    """A new household. own_chat (setup's --chat) registers the owner's own one-to-one chat with the agent: from then
+    on every message must say which chat it came from, so no other chat can act as the owner (context.resolve)."""
     people = members.parse_member_list(args.members)
     settings, notes = build_settings(args)
     owner_name = people[0][0] if people[0][1] == "owner" else next(n for n, r in people if r == "owner")
@@ -124,6 +120,12 @@ def _create(hub: Hub, args) -> dict:
     for member in roster:
         if member["role"] == "owner":
             member["chat_ok"] = {"owner_said": "set up the household", "at": now_stamp(), "by": member["id"]}
+    owner = next(m for m in roster if m["role"] == "owner")
+    chats = {}
+    if own_chat:
+        own_chat = clean_text(own_chat, "chat id", max_len=200)
+        chats[own_chat] = {"type": "direct", "minors_present": False, "participants": {}, "member": owner["id"],
+                           "registered_at": now_stamp()}  # fmt: skip
     if args.dry_run:
         return {
             "dry_run": True,
@@ -136,13 +138,14 @@ def _create(hub: Hub, args) -> dict:
             raise ToolError(
                 f"There's already a household called {name}.", hint="Pick another name.", code="exists"
             )
-        household = create_household(hub, name, settings, roster)
+        household = create_household(hub, name, settings, roster, chats=chats)
+        for chat_id in chats:
+            data.setdefault("chats", {})[chat_id] = household.id
         set_local_tz(settings["timezone"])
         with household.transaction():
             made = todos.ensure_default_lists(household) + shopping.ensure_default_lists(household)
             budget.add_default_categories(household)
             household.log("household.create", roster[0]["id"], members=len(roster))
-        owner = next(m for m in roster if m["role"] == "owner")
         data["active"] = household.id
         data.setdefault("speakers", {})[household.id] = owner["id"]
     kids = [m["name"] for m in roster if m["role"] in access.MINOR_ROLES]
@@ -161,7 +164,11 @@ def _create(hub: Hub, args) -> dict:
                   for lst in made],  # fmt: skip
         "notes": notes,
         "summary": summary,
-        "next": [
+        "chat": own_chat,
+        "next": ([] if own_chat else [
+            "If your platform gives each chat an id, register this one-to-one chat now, so no other chat can act as "
+            "the owner: fridge who chat <chat-id> --type direct. Then pass --chat <chat-id> with every message.",
+        ]) + [
             "Offer a Today summary every morning (time and days), if the platform has scheduled routines.",
             "In a group chat, register it once: fridge who chat <chat-id> --type group --minors yes|no",
         ] + ([
@@ -179,25 +186,37 @@ def cmd_setup(home, args) -> dict:
             hint='Add another with: fridge household add --name "..." --members "..." --country XX',
             code="already_set_up",
         )
-    return _create(hub, args)
+    return _create(hub, args, own_chat=getattr(args, "chat", None))
 
 
-def cmd_household_add(hub: Hub, args) -> dict:
-    _direct_only(args, "Adding a household")
-    result = _create(hub, args)
+def cmd_household_add(ctx, args) -> dict:
+    """Another household for the same person (a parent's, say). Only the owner adds one, as its owner too: the new
+    household becomes the active one, so their direct chat must still be them."""
+    ctx.viewer.require_owner("add a household")
+    _direct_only(ctx, "Adding a household")
+    people = members.parse_member_list(args.members)
+    owner_name = people[0][0] if people[0][1] == "owner" else next(n for n, r in people if r == "owner")
+    if fold(owner_name) != fold(ctx.member["name"]):
+        raise ToolError(
+            f"The new household's owner would be {owner_name}, but {ctx.member['name']} is adding it.",
+            hint=f'List yourself as its owner: --members "{ctx.member["name"]} (owner), ...". Your direct chat then '
+            "stays yours in both households.",
+            code="not_the_owner",
+        )
+    result = _create(ctx.hub, args)
     if not args.dry_run:
         result["summary"] += " It's now the active household."
     return result
 
 
-def _direct_only(args, what: str) -> None:
-    if getattr(args, "chat", None):
+def _direct_only(ctx, what: str) -> None:
+    if ctx.viewer.group:
         raise ToolError(f"{what} only works in a direct chat.", code="direct_chat_only")
 
 
-def cmd_household_list(hub: Hub, args) -> dict:
-    hub.require()
-    _direct_only(args, "Listing households")
+def cmd_household_list(ctx, args) -> dict:
+    _direct_only(ctx, "Listing households")
+    hub = ctx.hub
     active = hub.household().id
     items = []
     for entry in hub.households():
@@ -214,11 +233,22 @@ def cmd_household_list(hub: Hub, args) -> dict:
     return {"households": items, "summary": f"{plural(len(items), 'household')}; active: {hub.household().name}."}
 
 
-def cmd_household_switch(hub: Hub, args) -> dict:
-    hub.require()
-    _direct_only(args, "Switching households")
-    target = hub.household(args.name)
-    with hub.transaction() as data:
+def cmd_household_switch(ctx, args) -> dict:
+    """The active household is the one direct chats act in, so only the owner switches it, and only to a household
+    where direct chats are them too."""
+    ctx.viewer.require_owner("switch the active household")
+    _direct_only(ctx, "Switching households")
+    target = ctx.hub.household(args.name)
+    there = target.member(ctx.hub.speaker(target.id) or "")
+    if there is None or fold(there["name"]) != fold(ctx.member["name"]):
+        raise ToolError(
+            f"In {target.name}, direct chats run as {there['name'] if there else 'nobody yet'}, not "
+            f"{ctx.member['name']}.",
+            hint="Run that household's commands with --household instead, or ask its owner to make you its "
+            "direct-chat speaker there.",
+            code="not_the_owner",
+        )
+    with ctx.hub.transaction() as data:
         data["active"] = target.id
     return {"household": {"id": target.id, "name": target.name}, "summary": f"Switched to {target.name}."}
 
@@ -268,8 +298,23 @@ SETTING_KEYS = (
 )
 
 
-def _set(settings: dict, key: str, value: str, owner_words: str | None, actor_id: str) -> None:
-    key = key.strip().lower().replace("-", "_")
+# Settings that open something up: turning one on needs the owner's clear yes to its question (confirm.owner_yes).
+NEEDS_OWNER = {
+    "sensitive_notes_in_groups": "Show notes marked sensitive in group chats too?",
+    "reminders_outside_chat": "Allow reminders to be sent outside this chat (by email or another app)?",
+}
+_ON, _OFF = ("yes", "on", "true", "1"), ("no", "off", "false", "0")
+
+
+def _split_setting(item: str) -> tuple:
+    if "=" not in item:
+        raise ToolError(f"{item!r} should look like key=value.", hint="e.g. week_start=monday", code="bad_setting")
+    key, value = item.split("=", 1)
+    return key.strip().lower().replace("-", "_"), value
+
+
+def _set(settings: dict, key: str, value: str, owner_said: str | None, actor_id: str) -> None:
+    """One setting. For a NEEDS_OWNER one being turned on, owner_said is the owner's confirmed yes."""
     if key == "country":
         settings["country"] = regions.country_code(value)
     elif key == "currency":
@@ -298,29 +343,15 @@ def _set(settings: dict, key: str, value: str, owner_words: str | None, actor_id
         else:
             start, end = parse_hours_range(value)
             settings["quiet_hours"] = {"start": start, "end": end}
-    elif key in ("sensitive_notes_in_groups", "reminders_outside_chat"):
-        on = fold(value) in ("yes", "on", "true", "1")
-        if not on and fold(value) not in ("no", "off", "false", "0"):
-            raise ToolError(f"{key} needs yes or no.", code="bad_setting")
-        if not on:
+    elif key in NEEDS_OWNER:
+        if fold(value) in _OFF:
             settings[key] = False if key == "sensitive_notes_in_groups" else None
-        else:
-            question = (
-                "Show notes marked sensitive in group chats too?"
-                if key == "sensitive_notes_in_groups"
-                else "Allow reminders to be sent outside this chat (by email or another app)?"
-            )
-            if not owner_words:
-                raise ToolError(
-                    "This needs the owner's own OK.",
-                    hint="Ask the owner the question below. Only if they say yes, pass their exact words with "
-                    "--owner-confirmed.",
-                    code="needs_owner",
-                    ask_owner=question,
-                )
+        elif fold(value) in _ON and owner_said:
             settings[key] = True if key == "sensitive_notes_in_groups" else {
-                "owner_said": owner_words, "at": now_stamp(), "by": actor_id,
+                "owner_said": owner_said, "at": now_stamp(), "by": actor_id,
             }  # fmt: skip
+        else:
+            raise ToolError(f"{key} needs yes or no.", code="bad_setting")
     else:
         raise ToolError(f"{key!r} isn't a setting.", hint="Settings: " + ", ".join(SETTING_KEYS) + ".",
                         code="bad_setting")  # fmt: skip
@@ -331,14 +362,19 @@ def cmd_household_settings(ctx, args) -> dict:
     if not args.set:
         return {"settings": hh.settings, "summary": f"{hh.name}: {describe_settings(hh.settings)}."}
     ctx.viewer.require_owner("change household settings")
-    words = owner_words(args.owner_confirmed)
+    changes = [_split_setting(item) for item in args.set]
+    opening = [key for key, value in changes if key in NEEDS_OWNER and fold(value) in _ON]
+    if len(opening) > 1:
+        raise ToolError("Turn these on one at a time: each needs the owner's own yes to its own question.",
+                        hint="Run household settings once for each.", code="usage")  # fmt: skip
+    words = None
+    if opening:
+        key = opening[0]
+        words = confirm.owner_yes(hh, ctx.member["id"], f"settings|{key}=yes", NEEDS_OWNER[key], args.owner_confirmed,
+                                  args.confirm, why="This needs the owner's own OK.")  # fmt: skip
     with hh.transaction(dry_run=args.dry_run):
         settings = hh.meta()["settings"]
-        for item in args.set:
-            if "=" not in item:
-                raise ToolError(f"{item!r} should look like key=value.", hint="e.g. week_start=monday",
-                                code="bad_setting")  # fmt: skip
-            key, value = item.split("=", 1)
+        for key, value in changes:
             _set(settings, key, value, words, ctx.member["id"])
         hh.touch("household")
         hh.log("household.settings", ctx.member["id"], keys=[i.split("=", 1)[0] for i in args.set])
@@ -352,16 +388,19 @@ def cmd_household_delete(ctx, args) -> dict:
     hh = ctx.household
     if ctx.viewer.group:
         raise ToolError("Deleting a household only works in a direct chat with the owner.", code="direct_chat_only")
-    words = owner_words(args.owner_confirmed)
-    if not words:
-        raise ToolError(
-            f"Deleting {hh.name} erases all its lists, tasks, events, recipes, notes and budget. It can't be undone.",
-            hint="Ask the owner the question below; only if they say yes, pass their exact words with "
-            "--owner-confirmed. "
-            "Suggest `fridge export` first if they want a copy.",
-            code="needs_owner",
-            ask_owner=f"Delete {hh.name} and everything in it? This can't be undone.",
-        )
+    if args.dry_run:
+        counts = [plural(len(hh.members), "member"), plural(len(hh.data("todos")["tasks"]), "task"),
+                  plural(len(hh.data("calendar")["events"]), "event"),
+                  plural(len(hh.data("recipes")["recipes"]), "recipe"), plural(len(hh.data("notes")["notes"]), "note"),
+                  plural(len(hh.data("budget")["expenses"]), "expense")]  # fmt: skip
+        return {"dry_run": True, "summary": f"Would delete {hh.name} and everything in it: {', '.join(counts)}, "
+                "and every list, bill and printout. It can't be undone; an export first keeps a copy."}
+    confirm.owner_yes(
+        hh, ctx.member["id"], f"household.delete|{hh.id}",
+        f"Delete {hh.name} and everything in it? This can't be undone.", args.owner_confirmed, args.confirm,
+        why=f"Deleting {hh.name} erases all its lists, tasks, events, recipes, notes and budget. It can't be undone. "
+        "Suggest `fridge export` first if they want a copy.",
+    )
     with ctx.hub.transaction() as data:
         remove_household_folder(ctx.hub, hh)
         data["households"] = [e for e in data["households"] if e["id"] != hh.id]
@@ -383,16 +422,21 @@ def _own_copy(me: str) -> dict:
                 return event.get("owner") == me
             return vis != "members" or event.get("owner") == me or me in (event.get("members") or [])
 
-        return dict(data, events=[e for e in data.get("events", []) if mine(e)])
+        return dict(data, events=[e for e in data.get("events", []) if mine(e)],
+                    bin=[b for b in data.get("bin", []) if all(mine(e) for e in b["records"])])  # fmt: skip
 
     def notes(data):
-        return dict(data, notes=[n for n in data.get("notes", [])
-                                 if n.get("visibility") != "private" or n.get("author") == me])  # fmt: skip
+        def mine(note):
+            return note.get("visibility") != "private" or note.get("author") == me
+
+        return dict(data, notes=[n for n in data.get("notes", []) if mine(n)],
+                    bin=[b for b in data.get("bin", []) if all(mine(n) for n in b["records"])])  # fmt: skip
 
     def todos(data):
         hidden = {lst["id"] for lst in data.get("lists", []) if lst.get("owner") and lst.get("owner") != me}
         return dict(data, lists=[lst for lst in data.get("lists", []) if lst["id"] not in hidden],
-                    tasks=[t for t in data.get("tasks", []) if t.get("list") not in hidden])  # fmt: skip
+                    tasks=[t for t in data.get("tasks", []) if t.get("list") not in hidden],
+                    bin=[b for b in data.get("bin", []) if all(t.get("list") not in hidden for t in b["records"])])
 
     def notices(data):
         return dict(data, notices=[n for n in data.get("notices", []) if n.get("to") == me], sent={})
@@ -427,7 +471,10 @@ def cmd_doctor(home, args) -> dict:
     for entry in hub.households():
         hh = hub.household(entry["id"])
         tz = hh.settings.get("timezone")
-        if not tz or (tz != "UTC" and not tz_known(tz)):
+        if tz and tz != "UTC" and not tz_database_ok():
+            missing.append("a time zone list on this computer: run `pip install tzdata` once (Python on Windows "
+                           "doesn't come with one)")  # fmt: skip
+        elif not tz or (tz != "UTC" and not tz_known(tz)):
             missing.append(f"a time zone this computer knows for {hh.name}")
         if hub.speaker(hh.id) is None:
             missing.append(f"who's talking in direct chats for {hh.name} (fridge --as <owner> who speaker <name>)")
@@ -483,13 +530,12 @@ def register(cli) -> None:
         "Add another household (e.g. an extended family's) and make it the active one.",
         ['fridge household add --name "Grandma\'s" --members "Ana (owner), Grandma Rosa, Uncle Leo" --country PT'],
         cmd_household_add,
-        needs="hub",
     )
     _add_household_args(p)
     hh.add("list", "List the households in this data folder (direct chat).", ["fridge household list"],
-           cmd_household_list, needs="hub")  # fmt: skip
+           cmd_household_list)  # fmt: skip
     p = hh.add("switch", "Make another household the active one (direct chat).",
-               ['fridge household switch "Grandma\'s"'], cmd_household_switch, needs="hub")  # fmt: skip
+               ['fridge household switch "Grandma\'s"'], cmd_household_switch)  # fmt: skip
     p.add_argument("name", help="Household name or id")
     hh.add("show", "Show the household's settings and members.", ["fridge household show"], cmd_household_show)
     p = hh.add("rename", "Rename the household (owner).", ['fridge household rename --to "The Garcia-Lopez home"'],
@@ -502,17 +548,22 @@ def register(cli) -> None:
             "fridge household settings",
             "fridge household settings --set week_start=monday --set units=us",
             'fridge household settings --set quiet_hours="22:00-07:00"',
-            'fridge household settings --set reminders_outside_chat=yes --owner-confirmed "yes, email is fine"',
+            'fridge household settings --set reminders_outside_chat=yes --owner-confirmed "yes, email is fine" '
+            "--confirm 1c5e2a0-3f9b27d41c",
         ],
         cmd_household_settings,
     )
     p.add_argument("--set", action="append", help="key=value; repeat for more. Keys: " + ", ".join(SETTING_KEYS))
     p.add_argument("--owner-confirmed", help="The owner's own words, for settings that need their OK")
+    p.add_argument("--confirm", help="The code that came with the owner's question (confirm)")
     p.add_argument("--dry-run", action="store_true")
     p = hh.add(
         "delete",
         "Delete this household and everything in it (owner, direct chat, needs the owner's words).",
-        ['fridge household delete --owner-confirmed "yes, delete it"'],
+        ["fridge household delete",
+         'fridge household delete --owner-confirmed "yes, delete it" --confirm 1c5e2a0-3f9b27d41c'],
         cmd_household_delete,
     )
     p.add_argument("--owner-confirmed", help="The owner's own words confirming the deletion")
+    p.add_argument("--confirm", help="The code that came with the owner's question (confirm)")
+    p.add_argument("--dry-run", action="store_true", help="Say what would be deleted (no owner's yes needed)")

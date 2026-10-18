@@ -45,6 +45,7 @@ REGIONS = {
 
 # function(household, region_code) -> None; later modules register sample data here.
 DEMO_FILLERS: list = []
+WEEKDAY_NAMES = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
 
 # Sample lists and chores per region: (groceries, crossed off, history {item: times}, extra list, tasks, stars).
 # A task is (title, assignee or None, due offset in days or None, repeat words or None, rotation or None, priority).
@@ -59,7 +60,7 @@ DAILY = {
             ("Take out the bins", None, 0, "weekly", "Theo, Lily, Zoe", 0),
             ("Unload the dishwasher", None, 0, "daily", "Lily, Theo", 0),
             ("Book the winter tyre swap", "Marc", 3, None, None, 3),
-            ("Sign Lily's field trip form", "Ada", 1, None, None, 2),
+            ("Sign Lily's field trip form", "Ada", 0, None, None, 2),
             ("Clean out the garage", None, 5, None, None, 1),
             ("Practise piano", "Zoe", 0, "weekdays", None, 0),
         ],
@@ -77,6 +78,7 @@ DAILY = {
             ("Hoover the flat", None, 5, "weekly on sat", "Priya, Tom", 0),
             ("Book the boiler service", "Tom", 7, None, None, 2),
             ("Water the plants", None, 0, "every 3 days", None, 0),
+            ("Pay the window cleaner", "Priya", 0, None, None, 0),
         ],
         "personal": ("Priya", "Dentist check-up", 3),
         "stars": {},
@@ -90,6 +92,7 @@ DAILY = {
             ("Put the bins out", None, 1, "weekly on tue", "Jess, Kai, Sam", 0),
             ("Clean the bathroom", None, 5, "every 2 weeks on sat", "Kai, Sam, Jess", 0),
             ("Fix the wifi router", "Kai", 0, None, None, 3),
+            ("Transfer the rent", "Jess", 0, None, None, 2),
         ],
         "personal": ("Jess", "Renew rego", 12),
         "stars": {},
@@ -103,7 +106,7 @@ DAILY = {
             ("Feed the dog", None, 0, "daily", "Ruby, Max", 0),
             ("Make bed", "Max", 0, "weekdays", None, 0),
             ("Science project due", "Ruby", 4, None, None, 2),
-            ("Schedule car service", "Dana", 2, None, None, 1),
+            ("Schedule car service", "Dana", 0, None, None, 1),
         ],
         "personal": ("Dana", "Call the pediatrician", 1),
         "stars": {"Ruby": 6, "Max": 4},
@@ -181,6 +184,13 @@ DEMO_FILLERS.append(_fill_daily)
 
 
 def cmd_demo(home, args) -> dict:
+    if not getattr(args, "home", None):  # never the real data folder ($FRIDGE_HOME or the default)
+        raise ToolError(
+            "The demo needs a folder of its own, so it never mixes with a real household.",
+            hint="Run it with --home, e.g. fridge --home /tmp/fridge-door-demo demo --region CA, and keep using that "
+            "--home for the demo.",
+            code="needs_home",
+        )
     region = (args.region or "CA").upper()
     if region not in REGIONS:
         raise ToolError(f"No demo for {region}.", hint="Demos: " + ", ".join(REGIONS) + ".", code="bad_region")
@@ -199,7 +209,7 @@ def cmd_demo(home, args) -> dict:
         members=spec["members"],
         country=spec["country"],
         currency=None,
-        timezone=spec["timezone"],
+        timezone=args.timezone or spec["timezone"],
         week_start=None,
         date_format=None,
         time_format=None,
@@ -261,6 +271,7 @@ def register(cli) -> None:
     )
     p.add_argument("--region", choices=sorted(REGIONS), help="Which sample household (default CA)")
     p.add_argument("--force", action="store_true", help="Add the demo household even if the folder has data")
+    p.add_argument("--timezone", help="The person's own time zone (IANA name), so the demo's day matches theirs")
 
 
 # Sample recipes, calendar and a week of meals per region. Every recipe here is a plain home version written for
@@ -280,6 +291,7 @@ PLANNING = {
              "pan until bubbles form, then flip."], ["breakfast", "quick"]),
         ],
         "events": [
+            ("Recycling pickup", 0, None, None, None, "weekly"),
             ("Soccer practice", 1, "17:30", "19:00", "Lily", "weekly"),
             ("Hockey", 2, "17:30", "19:00", "Zoe", "weekly"),
             ("Piano lesson", 3, "16:00", "16:45", "Theo", "weekly"),
@@ -316,6 +328,7 @@ PLANNING = {
              ["Toast the bread.", "Smash the avocado with lemon and salt; spread."], ["breakfast", "quick"]),
         ],
         "events": [
+            ("Grocery delivery", 0, "18:00", "19:00", None, None),
             ("Kai's late shift", 1, "16:00", "22:00", "Kai", "weekly"),
             ("House meeting", 6, "18:00", "18:30", None, "monthly"),
         ],
@@ -333,6 +346,7 @@ PLANNING = {
         ],
         "events": [
             ("Swim practice", 0, "16:30", "18:00", "Ruby", "weekly on mon, wed"),
+            ("Library books due", 0, None, None, "Max", None),
             ("Parent-teacher conference", 1, "17:00", "17:30", "Dana", None),
             ("School play", 3, "18:00", "19:30", "Max", None),
         ],
@@ -347,7 +361,7 @@ def _fill_planning(hh, region: str) -> None:
     import datetime as _dt
 
     from . import events, recipes, recur
-    from .util import now_stamp
+    from .util import fold, now_stamp
 
     spec = PLANNING[region]
     today = hh.today()
@@ -371,8 +385,8 @@ def _fill_planning(hh, region: str) -> None:
             day = recur.next_after(recur.parse(rrule), day, day - _dt.timedelta(days=1)) or day
         kind = events.guess_type(title)
         cal["events"].append({
-            "id": hh.next_id("event"), "title": title, "type": kind, "icon": events.TYPES[kind], "kind": "event",
-            "date": day.isoformat(), "time": time, "end_time": end, "end_date": None, "location": None,
+            "id": hh.next_id("event"), "title": title, "type": kind, "icon": events.guess_icon(title, kind),
+            "kind": "event", "date": day.isoformat(), "time": time, "end_time": end, "end_date": None, "location": None,
             "notes": None, "visibility": "household", "members": members, "owner": owner["id"], "reminders": [60],
             "rrule": rrule, "exdates": [], "overrides": {}, "source": "demo", "created_at": now_stamp(),
         })  # fmt: skip
@@ -391,6 +405,9 @@ def _fill_planning(hh, region: str) -> None:
     plan = hh.data("mealplan")["plan"]
     previous = None
     for offset, title, text in spec["meals"]:
+        named = next((i for i, n in enumerate(WEEKDAY_NAMES) if n in fold(f"{title} {text}")), None)
+        if named is not None:  # "Saturday pancakes" goes on the coming Saturday, whatever day the demo is made
+            offset = (named - today.weekday()) % 7
         day = (today + _dt.timedelta(days=offset)).isoformat()
         meal = "breakfast" if text == "breakfast" else "dinner"
         entry = {"id": hh.next_id("meal"), "recipe": titles.get(title), "text": None, "servings": None,

@@ -175,7 +175,7 @@ def week_data(ctx, first: _dt.date, with_chores: bool = True, mine: bool = False
                      "dinner": ", ".join(dinners) or None})  # fmt: skip
     out = {"first": first.isoformat(), "last": last.isoformat(), "days": days, "chores": [], "stars": [], "notes": []}
     if with_chores and viewer.sees("todos"):
-        projected = todos.project_chores(hh, hh.data("todos"), first, last)
+        projected = todos.project_chores(hh, todos.kid_level(ctx, hh.data("todos")), first, last)
         for member in hh.members:
             mine_ = [c for c in projected if c["member_id"] == member["id"]]
             if mine_:
@@ -643,14 +643,10 @@ def budget_html(hh, data: dict) -> str:
 # --------------------------------------------------------------------------- commands
 
 
-def _out(ctx, name: str, fmt: str, draw, html_text: str, strings, landscape: bool, private: bool = False) -> dict:
-    """Write the printout. One holding things only some may see (--mine, the budget report) goes in the person's own
-    folder, which is deleted if they leave the household, and never shares a file name with the household's copy."""
-    hh = ctx.household
-    folder = hh.output_dir()
-    if private:
-        folder = folder / "private" / ctx.member["id"]
-        folder.mkdir(parents=True, exist_ok=True)
+def _out(ctx, name: str, fmt: str, draw, html_text: str, strings, landscape: bool) -> dict:
+    """Write the printout in the folder for the chat it's made in (Household.output_for): a person's own folder, or
+    a group chat's, so a sheet made for the kids' group never overwrites one made for a parent."""
+    folder = ctx.household.output_for(ctx.member["id"], ctx.chat_id if ctx.viewer.group else None)
     return write(folder, name, fmt, draw, html_text, strings, landscape=landscape)
 
 
@@ -694,14 +690,14 @@ def cmd_calendar(ctx, args) -> dict:
         title = "Week of " + hh.day(first)
         result = _out(ctx, f"calendar-week-{first.isoformat()}", args.format,
                       lambda p: draw_week(hh, data, title, p, False), week_html(hh, data, title, False),
-                      _strings_week(data), True, private=args.mine)  # fmt: skip
+                      _strings_week(data), True)  # fmt: skip
         return dict(result, summary=f"The calendar for the week of {hh.day(first)} is ready.")
     first, _ = budget.parse_month(hh, args.month)
     data = month_data(ctx, first, member_id, args.mine)
     strings = [o["title"] for w in data["weeks"] for d in w for o in d["events"]]
     strings += [i["member"] for i in data["legend"]]
     result = _out(ctx, f"calendar-{first.strftime('%Y-%m')}", args.format, lambda p: draw_month(hh, data, p),
-                  month_html(hh, data), strings, True, private=args.mine)  # fmt: skip
+                  month_html(hh, data), strings, True)  # fmt: skip
     return dict(result, summary=f"The {data['month']} calendar is ready.")
 
 
@@ -739,7 +735,7 @@ def cmd_budget(ctx, args) -> dict:
     data = budget_data(hh, first, last)
     strings = [r["category"] for r in data["summary"]["rows"]] + [g["name"] for g in data["goals"]]
     result = _out(ctx, f"budget-{first.strftime('%Y-%m')}", args.format, lambda p: draw_budget(hh, data, p),
-                  budget_html(hh, data), strings, False, private=True)  # fmt: skip
+                  budget_html(hh, data), strings, False)  # fmt: skip
     month = data["summary"]["month_name"]
     return dict(result, summary=f"The budget report for {month} is ready (private: not for the fridge).")
 

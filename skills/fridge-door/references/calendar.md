@@ -59,7 +59,9 @@ Contents:
 - **Skip one date:** `fridge cal skip "Soccer practice" --on 2026-10-27` (`--undo` brings it back;
   `--dry-run` previews it).
 - **Stop repeating from a date:** `fridge cal delete "Soccer practice" --from-date 2026-12-01`.
-  `cal delete <event>` alone removes every repeat; confirm first when it repeats.
+  `cal delete <event>` alone removes every repeat; confirm first when it repeats. A deleted event
+  goes to the bin for the retention period (`fridge bin restore <title>`; see
+  [lists-and-chores.md](lists-and-chores.md#the-bin)).
 
 ## Looking ahead
 
@@ -94,8 +96,9 @@ events that mention a birthday in the title.
 
 **Export** (to add the household calendar to Google, Apple or Outlook): `fridge ics export`
 (`--for Lily` for one person's events, `--file <name>` for the file name). It holds only what the
-person asking may see, with time zones, repeats, skipped and moved dates and reminders. Send them
-the file from `file`; their calendar app opens it.
+person asking may see, with time zones, repeats, skipped and moved dates and reminders. It's saved
+in that person's own folder (a group chat's in the group's), so one person's file never overwrites
+another's. Send them the file from `file`; their calendar app opens it.
 
 **Import** (a school term, a sports schedule, someone's work calendar): save the file they sent,
 then:

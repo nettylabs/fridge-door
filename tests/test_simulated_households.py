@@ -64,7 +64,7 @@ class OwnerAndChatsTest(HomeTest):
 
     def test_one_to_one_chats_need_the_same_adult_check_and_belong_to_their_person(self):
         self.err("needs_owner", "who", "chat", "jess-dm", "--type", "direct", "--member", "Jess")
-        self.ok("who", "chat", "jess-dm", "--type", "direct", "--member", "Jess", "--owner-confirmed", "yes")
+        self.confirmed("who", "chat", "jess-dm", "--type", "direct", "--member", "Jess", words="yes")
         self.ok("member", "access", "Jess", "--set", "budget=none")
         self.err("chat_belongs_to_someone", "budget", "bills", "--chat", "jess-dm", "--as", "Kai")
         self.assertEqual(self.ok("who", "am-i", "--chat", "jess-dm", "--as", "Jess")["member"]["name"], "Jess")
@@ -161,7 +161,7 @@ class RepeatsAndChoresTest(HomeTest):
 
     def test_removing_someone_whose_turn_it_is_passes_it_on(self):
         self.ok("todo", "add", "Bins", "--repeat", "weekly on tue", "--rotate", "Sam, Kai, Jess")
-        out = self.ok("member", "remove", "Sam", "--owner-confirmed", "yes, Sam has moved out")
+        out = self.confirmed("member", "remove", "Sam", words="yes, Sam has moved out")
         self.assertIn("passed their turn on Bins", " ".join(out["changes"]))
         task = next(t for t in Hub(self.home).household().data("todos")["tasks"] if t["title"] == "Bins")
         self.assertEqual(task["assignee"], "M1")  # Kai, next in line
@@ -207,7 +207,7 @@ class BudgetTest(HomeTest):
     def test_the_budget_report_stays_out_of_group_chats(self):
         self.ok("who", "chat", "us", "--type", "group", "--minors", "no")
         self.ok("who", "link", "us", "--participant", "@sam", "--member", "Sam")
-        self.ok("who", "link", "us", "--participant", "@alex", "--member", "Alex", "--owner-confirmed", "yes")
+        self.confirmed("who", "link", "us", "--participant", "@alex", "--member", "Alex", words="yes")
         self.err("direct_chat_only", "print", "budget", "--chat", "us", "--from", "@sam")
 
 
@@ -383,6 +383,8 @@ class RemindersTest(HomeTest):
     def setUp(self):
         super().setUp()
         self.setup_family("Sam, Alex", "GB")
+        for name in ("Sam", "Alex"):  # reminders are each adult's own yes
+            self.ok("member", "edit", name, "--reminders", "on", "--as", name)
 
     def due(self, now):
         return self.ok("remind", "due", env={"FRIDGE_NOW": now})
@@ -396,7 +398,7 @@ class RemindersTest(HomeTest):
         self.assertNotIn("12 hours", text)
 
     def test_a_bill_added_after_its_reminder_time_is_still_reminded(self):
-        self.ok("who", "chat", "alex-dm", "--type", "direct", "--member", "Alex", "--owner-confirmed", "yes")
+        self.confirmed("who", "chat", "alex-dm", "--type", "direct", "--member", "Alex", words="yes")
         self.ok("budget", "bill-add", "Council tax", "--amount", "180", "--due", "2026-10-21")
         out = self.due("2026-10-19T09:00:00")
         self.assertEqual([r["to"] for r in out["send"]], ["Sam", "Alex"])  # once each
@@ -407,7 +409,7 @@ class RemindersTest(HomeTest):
         out = self.due("2026-10-20T13:05:00")
         self.assertEqual([(r["to"], r["chats"]) for r in out["send"]], [("Sam", ["direct"])])  # "remind me"
         self.assertIn("Dentist (Alex)", out["send"][0]["text"])
-        self.ok("who", "chat", "alex-dm", "--type", "direct", "--member", "Alex", "--owner-confirmed", "yes")
+        self.confirmed("who", "chat", "alex-dm", "--type", "direct", "--member", "Alex", words="yes")
         self.ok("cal", "add", "Optician", "--date", "2026-10-21", "--time", "14:00", "--for", "Alex", "--remind", "1h")
         self.assertEqual([r["to"] for r in self.due("2026-10-21T13:05:00")["send"]], ["Alex"])  # now Alex's own
 
@@ -439,7 +441,7 @@ class RemindersTest(HomeTest):
     def test_each_reminder_says_which_chats_it_may_go_to(self):
         self.ok("who", "chat", "us", "--type", "group", "--minors", "no")
         self.ok("who", "link", "us", "--participant", "@sam", "--member", "Sam")
-        self.ok("who", "link", "us", "--participant", "@alex", "--member", "Alex", "--owner-confirmed", "yes")
+        self.confirmed("who", "link", "us", "--participant", "@alex", "--member", "Alex", words="yes")
         self.ok("cal", "add", "Movie", "--date", "today", "--time", "20:00", "--remind", "1h")
         self.ok("cal", "add", "Therapy", "--date", "today", "--time", "20:00", "--remind", "1h", "--private")
         sent = {r["text"].split()[1]: r["chats"] for r in self.due("2026-10-19T19:05:00")["send"]}
@@ -452,17 +454,25 @@ class NotesAndPrintoutsTest(HomeTest):
         super().setUp()
         self.setup_family("Jordan, Ava (11)", "US")
 
-    def test_a_note_about_a_childs_health_suggests_keeping_it_sensitive(self):
-        out = self.ok("note", "add", "Grandma's pickup notes", "--body", "Ava is allergic to peanuts, EpiPen in bag")
+    def test_a_childs_health_or_school_details_need_a_sensitive_or_private_note(self):
+        body = ("--body", "Ava is allergic to peanuts, EpiPen in bag")
+        out = self.err("child_details", "note", "add", "Grandma's pickup notes", *body)
         self.assertIn("--sensitive", out["hint"])
+        self.ok("note", "add", "Grandma's pickup notes", *body, "--sensitive")
+        self.err("child_details", "note", "add", "Ava", "--body", "Ava attends Maple Elementary")
+        self.ok("note", "add", "Ava", "--body", "Ava attends Maple Elementary", "--private")
+        self.ok("note", "add", "Sitter", "--body", "Bedtime 8pm")
+        self.err("child_details", "note", "edit", "Sitter", "--append", "Ava has asthma, inhaler in the kitchen")
+        self.ok("note", "edit", "Sitter", "--append", "Ava has asthma, inhaler in the kitchen", "--sensitive")
+        self.err("child_details", "note", "edit", "Sitter", "--not-sensitive")
 
     def test_a_persons_own_printout_stays_theirs_and_goes_when_they_do(self):
         self.ok("member", "add", "--name", "Rose", "--role", "adult")
-        self.ok("who", "chat", "rose-dm", "--type", "direct", "--member", "Rose", "--owner-confirmed", "yes")
+        self.confirmed("who", "chat", "rose-dm", "--type", "direct", "--member", "Rose", words="yes")
         self.ok("cal", "add", "Hospital check", "--date", "friday", "--private", "--chat", "rose-dm")
         out = self.ok("print", "calendar", "--mine", "--chat", "rose-dm")
         self.assertIn("/private/M3/", out["files"][0])
-        self.ok("member", "remove", "Rose", "--owner-confirmed", "yes")
+        self.confirmed("member", "remove", "Rose", words="yes")
         self.assertFalse((Hub(self.home).household().output_dir() / "private" / "M3").exists())
 
 

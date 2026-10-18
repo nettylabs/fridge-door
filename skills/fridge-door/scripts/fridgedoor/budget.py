@@ -14,7 +14,7 @@ import re
 from decimal import Decimal
 from pathlib import Path
 
-from . import money, recur
+from . import money, recur, trash
 from .util import (MONTH_NAMES, MONTH_WORDS, ToolError, add_months, clean_text, fold, match_one, now_stamp,
                    plural)
 
@@ -282,13 +282,16 @@ def cmd_category_delete(ctx, args) -> dict:
             for exp in data["expenses"]:
                 if exp["category"] == cat["id"]:
                     exp["category"] = target["id"]
+        linked = [bill["id"] for bill in data["bills"] if bill.get("category") == cat["id"]]
         for bill in data["bills"]:
             if bill.get("category") == cat["id"]:
                 bill["category"] = None
         data["categories"] = [c for c in data["categories"] if c["id"] != cat["id"]]
+        undo = trash.put(hh, "category", [cat], ctx.member["id"], bills=linked, moved=used,
+                         moved_to=target["name"] if used else None)  # fmt: skip
         hh.touch("budget")
         hh.log("budget.category_delete", ctx.member["id"], category=cat["id"])
-    return {"summary": f"Deleted the category {cat['name']}."}
+    return {"summary": f"Deleted the category {cat['name']}. {trash.kept_for(hh)}", "undo": undo}
 
 
 # --------------------------------------------------------------------------- commands: expenses
@@ -410,13 +413,17 @@ def cmd_expense_delete(ctx, args) -> dict:
         data = hh.data("budget")
         exp = match_one(data["expenses"], args.expense, "expense", key="id")
         data["expenses"] = [e for e in data["expenses"] if e["id"] != exp["id"]]
+        paid = [[bill["id"], due] for bill in data["bills"] for due, eid in bill.get("paid", {}).items()
+                if eid == exp["id"]]  # fmt: skip
         for bill in data["bills"]:
             bill["paid"] = {due: eid for due, eid in bill.get("paid", {}).items() if eid != exp["id"]}
+        undo = trash.put(hh, "expense", [exp], ctx.member["id"], paid=paid)
         hh.touch("budget")
         hh.log("budget.expense_delete", ctx.member["id"], expense=exp["id"])
     verb = "Would delete" if args.dry_run else "Deleted"
-    return {"dry_run": args.dry_run,
-            "summary": f"{verb} the expense {exp['id']} ({money.fmt(Decimal(exp['amount']), disp(hh))})."}
+    return {"dry_run": args.dry_run, "undo": None if args.dry_run else undo,
+            "summary": f"{verb} the expense {exp['id']} ({money.fmt(Decimal(exp['amount']), disp(hh))}). "
+                       f"{trash.kept_for(hh)}"}  # fmt: skip
 
 
 def cmd_month(ctx, args) -> dict:
@@ -630,8 +637,10 @@ def cmd_bill_delete(ctx, args) -> dict:
         data = hh.data("budget")
         bill = find_bill(data, args.bill)
         data["bills"] = [b for b in data["bills"] if b["id"] != bill["id"]]
+        undo = trash.put(hh, "bill", [bill], ctx.member["id"])
         hh.touch("budget")
-    return {"summary": f"Deleted the bill {bill['name']} (past payments stay in the expenses)."}
+    return {"summary": f"Deleted the bill {bill['name']} (past payments stay in the expenses). {trash.kept_for(hh)}",
+            "undo": undo}
 
 
 # --------------------------------------------------------------------------- commands: goals
@@ -699,8 +708,9 @@ def cmd_goal_delete(ctx, args) -> dict:
         data = hh.data("budget")
         goal = find_goal(data, args.goal)
         data["goals"] = [g for g in data["goals"] if g["id"] != goal["id"]]
+        undo = trash.put(hh, "goal", [goal], ctx.member["id"])
         hh.touch("budget")
-    return {"summary": f"Deleted the goal {goal['name']}."}
+    return {"summary": f"Deleted the goal {goal['name']}. {trash.kept_for(hh)}", "undo": undo}
 
 
 # --------------------------------------------------------------------------- layers, Today, erase
@@ -754,6 +764,16 @@ def forget_member(hh, member_id: str) -> list:
     for bill in data["bills"]:
         if bill.get("created_by") == member_id:
             bill["created_by"] = None
+
+    def scrub(record: dict) -> None:  # an expense, bill, goal or category in the bin
+        for key in ("spent_by", "created_by"):
+            if record.get(key) == member_id:
+                record[key] = None
+        for c in record.get("contributions", []):
+            if c.get("by") == member_id:
+                c["by"] = None
+
+    trash.forget(hh, "budget", member_id, lambda record: False, scrub)
     hh.touch("budget")
     return []
 

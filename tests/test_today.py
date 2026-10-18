@@ -105,7 +105,7 @@ class TodayCommandTest(HomeTest):
 
     def test_notices_stay_out_of_group_chats(self):
         self.ok("who", "chat", "fam", "--type", "group", "--minors", "no")
-        self.ok("who", "link", "fam", "--participant", "@luis", "--member", "Luis", "--owner-confirmed", "yes")
+        self.confirmed("who", "link", "fam", "--participant", "@luis", "--member", "Luis", words="yes")
         out = self.ok("today", "--chat", "fam", "--from", "@luis")
         self.assertEqual(out["sections"]["notices"]["items"], [])
         self.assertIn("direct chat", out["sections"]["notices"]["lines"][0])

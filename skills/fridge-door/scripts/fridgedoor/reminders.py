@@ -2,8 +2,9 @@
 
 The toolkit never sends anything. The agent runs `fridge remind due` on its own schedule (for example every 15
 minutes) and passes each message on:
-- only to adults (kids and teens don't chat with the agent: their events remind the adult who made them, as do
-  events for adults who never talk with the agent);
+- only to adults who turned reminders on themselves (member edit --reminders on: nobody gets reminders they didn't
+  ask for), and never to kids or teens: their events remind the adult who made them, as do events for adults who
+  never talk with the agent;
 - only in the chats each reminder lists: bills and private events only in that person's own chats, members-only
   events only in groups where everyone linked is one of its people. Someone with no chat to get one in is named in
   "nowhere" (without what it was), so the owner can register their one-to-one chat;
@@ -97,14 +98,14 @@ def _event_recipients(hh, event: dict) -> list:
     the household except the person whose birthday it is."""
     if event.get("kind") == "birthday":
         whose = (event.get("birthday") or {}).get("member")
-        return [m for m in hh.members if access.is_adult(m) and m["id"] != whose]
+        return [m for m in hh.members if access.is_adult(m) and m["id"] != whose and members.wants_reminders(m)]
     adults = [hh.member(m) for m in event.get("members") or []]
-    adults = [m for m in adults if m and access.is_adult(m)]
+    adults = [m for m in adults if m and access.is_adult(m) and members.wants_reminders(m)]
     reachable = [m for m in adults if _talks_here(hh, m["id"])]
     if reachable:
         return reachable
     owner = hh.member(event.get("owner")) if event.get("owner") else None
-    if owner and access.is_adult(owner):
+    if owner and access.is_adult(owner) and members.wants_reminders(owner):
         return [owner]
     return adults  # nobody else to tell: they're named in "nowhere"
 
@@ -134,7 +135,8 @@ def _candidates(ctx, now: _dt.datetime) -> list:
                                 "occurrence": f"event:{event['id']}:{occ['original_date']}",
                                 "key": f"event:{event['id']}:{occ['original_date']}:{minutes}:{person['id']}",
                                 "what": (f"{occ['icon']} {occ['title']}{who}", where)})  # fmt: skip
-    budget_people = [m for m in hh.members if access.is_adult(m) and access.can(m, "budget", "view")]
+    budget_people = [m for m in hh.members if access.is_adult(m) and access.can(m, "budget", "view")
+                     and members.wants_reminders(m)]  # fmt: skip
     from .budget import bill_dues, disp
     from .money import fmt
 
@@ -169,7 +171,7 @@ def _chats(hh, cand: dict, now: _dt.datetime) -> list:
     chats = hh.meta().get("chats", {})
     out = [chat_id for chat_id, chat in sorted(chats.items())
            if chat.get("type") == "direct" and chat.get("member") == person["id"]]  # fmt: skip
-    if hh.hub.speaker(hh.id) == person["id"]:
+    if hh.hub.speaker(hh.id) == person["id"] and not out:  # their one-to-one chat, when it isn't registered
         out.append("direct")
     if cand["kind"] == "bill":
         return out
@@ -271,8 +273,15 @@ def cmd_due(ctx, args) -> dict:
         names = and_list(sorted({r["to"] for r in result["nowhere"]}))
         summary += (f" {names} had a reminder but no chat to get it in, so it wasn't sent. The owner can register "
                     "their own one-to-one chat: fridge who chat <chat-id> --type direct --member <name>")
-    return dict(result, now=now.isoformat(), outside_chat_ok=bool(outside), text="\n".join(lines) or "Nothing due.",
-                summary=summary)  # fmt: skip
+    wanting = [m["name"] for m in hh.members if access.is_adult(m) and members.wants_reminders(m)]
+    if args.mine and ctx.member["name"] not in wanting:
+        summary += (" Your reminders are off. If you'd like them, say so, and this runs: fridge member edit "
+                    f"{ctx.member['name']} --reminders on")
+    elif not wanting:
+        summary += (" Nobody has turned reminders on yet: each adult who wants them says so in their own chat "
+                    "(member edit <name> --reminders on).")
+    return dict(result, now=now.isoformat(), outside_chat_ok=bool(outside), reminders_on=wanting,
+                text="\n".join(lines) or "Nothing due.", summary=summary)  # fmt: skip
 
 
 def register(cli) -> None:

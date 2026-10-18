@@ -55,7 +55,7 @@ def _tasks(ctx, member, day):
     if not viewer.sees("todos") or not access.can(member, "todos", "view"):
         return None
     hh = ctx.household
-    data = hh.data("todos")
+    data = todos.kid_level(ctx, hh.data("todos"))
     shared = {lst["id"] for lst in data["lists"] if not lst.get("owner") and not lst.get("deleted_at")}
     own = {lst["id"] for lst in data["lists"] if lst.get("owner") == member["id"] and not lst.get("deleted_at")}
     allowed = shared | (own if viewer.sees_private_of(member["id"]) else set())

@@ -69,6 +69,16 @@ def assignment(hh, task: dict, assignee: dict, by: dict, viewer, turn: bool = Fa
     return {"notice": note["id"], "how": "in_this_chat" if here else "next_time_they_talk"}
 
 
+def withdraw(hh, ref: str) -> int:
+    """Take back notices about a task that's gone (an undone chore's next turn), unless they were read already."""
+    data = hh.data("notices")
+    before = len(data["notices"])
+    data["notices"] = [n for n in data["notices"] if n.get("ref") != ref or n.get("delivered_at")]
+    if len(data["notices"]) != before:
+        hh.touch("notices")
+    return before - len(data["notices"])
+
+
 def forget_member(hh, member_id: str) -> list:
     data = hh.data("notices")
     before = len(data["notices"])
